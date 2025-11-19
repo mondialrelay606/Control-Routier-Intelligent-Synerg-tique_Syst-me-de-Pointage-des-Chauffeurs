@@ -1,6 +1,36 @@
 import React from 'react';
 
 export const Icons = {
+  CrisLogo: (props: any) => (
+    <svg viewBox="0 0 550 120" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+      {/* Abstract Icon: Road/Node Synergy */}
+      <g transform="translate(20, 20)">
+        {/* Hexagon base representing Control/Stability */}
+        <path d="M40 0 L75 20 L75 60 L40 80 L5 60 L5 20 Z" fill="rgba(255,255,255,0.1)" stroke="white" strokeWidth="2" />
+        
+        {/* Dynamic Lines representing Route & Synergy */}
+        <path d="M20 40 L45 40 L60 25" stroke="#57c4c1" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M20 55 L45 55 L60 70" stroke="#ffcc10" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+        
+        {/* Central Node */}
+        <circle cx="40" cy="40" r="6" fill="white" />
+      </g>
+
+      {/* Typography */}
+      <text x="110" y="65" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="52" fill="white" letterSpacing="2">
+        CRIS
+      </text>
+      
+      {/* Subtitle / Full Name */}
+      <text x="112" y="92" fontFamily="Arial, sans-serif" fontWeight="500" fontSize="19" fill="rgba(255,255,255,0.9)" letterSpacing="0.5">
+        Control Routier Intelligent & Synergétique
+      </text>
+      
+      {/* Decorative accent line */}
+      <path d="M112 108 L480 108" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+      <path d="M112 108 L180 108" stroke="#57c4c1" strokeWidth="3" />
+    </svg>
+  ),
   Clock: (props: any) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />

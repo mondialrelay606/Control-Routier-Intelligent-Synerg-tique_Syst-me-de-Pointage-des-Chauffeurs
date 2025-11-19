@@ -46,7 +46,7 @@ function App() {
            </div>
            <div>
              <h1 className="text-xl font-bold text-gray-800">Panneau d'Administration</h1>
-             <p className="text-xs text-gray-500">Système de Pointage</p>
+             <p className="text-xs text-gray-500">Control Routier Intelligent & Synergétique</p>
            </div>
         </div>
         <div className="flex gap-4 items-center">

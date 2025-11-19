@@ -107,12 +107,18 @@ export const KioskView: React.FC<{ onSwitch: () => void }> = ({ onSwitch }) => {
     <div className="flex h-screen bg-gray-100 overflow-hidden">
       {/* Left: Interaction Zone */}
       <div className="w-1/2 bg-brand-primary p-8 flex flex-col relative">
-        <button 
-          onClick={onSwitch} 
-          className="absolute top-6 left-6 bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-lg transition text-base font-semibold shadow-sm backdrop-blur-sm border border-white/10 z-10"
-        >
-          Administration
-        </button>
+        <div className="flex justify-between items-start mb-4">
+             {/* Logo Section */}
+             <div className="w-full max-w-md">
+                <Icons.CrisLogo className="w-full h-auto max-h-32" />
+             </div>
+             <button 
+                onClick={onSwitch} 
+                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition text-sm font-semibold shadow-sm backdrop-blur-sm border border-white/10"
+             >
+                Admin
+            </button>
+        </div>
         
         <div className="flex-1 flex flex-col justify-center max-w-lg mx-auto w-full">
           <Clock />
@@ -187,7 +193,7 @@ export const KioskView: React.FC<{ onSwitch: () => void }> = ({ onSwitch }) => {
         </div>
         
         <div className="mt-auto text-center text-white/60 text-sm">
-            <p>Système v1.2 - Notifications Actives</p>
+            <p>Système v1.3 - Notifications Actives</p>
             <p className="text-xs mt-2 text-white font-semibold opacity-90">Développé par cviguera</p>
         </div>
       </div>
