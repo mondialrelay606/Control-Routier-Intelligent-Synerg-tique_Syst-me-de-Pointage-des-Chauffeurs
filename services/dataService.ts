@@ -42,7 +42,6 @@ const MOCK_DRIVERS: Driver[] = [
   { id: 'C467592', name: 'ALI ALLAHMED', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.86.02.05.29' },
   { id: 'C538202', name: 'Arsen Avahimian', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.49.81.76.03' },
   { id: 'C810342', name: 'Salim Amroune', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.45.69.15.99' },
-  { id: 'C841047_2', name: 'Alsadig MOHAMED ABAKAR', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.69.11.44.67' },
   { id: 'C841352', name: 'mohamed lemrhari', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.59.78.96.63' },
   { id: 'C969240', name: 'issam HASSAN MOHAMMED HASSAN', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.68.69.60.33' },
   { id: 'C268094', name: 'Hacen Negaa', subcontractor: 'TM', plate: '', tour: '', telephone: '+33(0)6.24.14.11.24' },
@@ -64,7 +63,6 @@ const MOCK_DRIVERS: Driver[] = [
   { id: 'C294104', name: 'karim BELGACEM', subcontractor: 'KARR', plate: '', tour: '7005', telephone: '+33(0)7.80.80.54.81' },
   { id: 'C991824', name: 'Margaux Filali', subcontractor: 'KARR', plate: '', tour: '7003', telephone: '+33(0)6.20.38.50.31' },
   { id: 'C838770', name: 'Nour El karrat', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)6.27.38.87.98' },
-  { id: 'C294104_2', name: 'Ismail Abdel weheb', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)7.80.80.54.81' },
   { id: 'C506975', name: 'Rahal Faycal', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)6.69.96.85.25' },
   { id: 'C082977', name: 'NASSIM LAURACH', subcontractor: 'PADO', plate: '', tour: '8003', telephone: '+33(0)6.51.19.17.11' },
   { id: 'C080653', name: 'Salim Bechikh', subcontractor: 'PADO', plate: '', tour: '8007', telephone: '+33(0)7.45.19.74.87' },
@@ -87,15 +85,25 @@ const MOCK_DRIVERS: Driver[] = [
 const initStorage = () => {
   const existingDriversStr = localStorage.getItem(KEYS.DRIVERS);
   
+  // IDs to be removed from storage if present (legacy data cleanup)
+  const BANNED_IDS = ['C841047_2', 'C294104_2'];
+
   if (!existingDriversStr) {
     localStorage.setItem(KEYS.DRIVERS, JSON.stringify(MOCK_DRIVERS));
   } else {
-    // Robust duplicate cleaning on load
+    // Robust duplicate and banned ID cleaning on load
     try {
-        const drivers = JSON.parse(existingDriversStr) as Driver[];
+        let drivers = JSON.parse(existingDriversStr) as Driver[];
         const seen = new Set();
         const cleanDrivers: Driver[] = [];
         let hasChanges = false;
+
+        // Check if we need to remove banned IDs
+        const initialLength = drivers.length;
+        drivers = drivers.filter(d => !BANNED_IDS.includes(d.id));
+        if (drivers.length !== initialLength) {
+            hasChanges = true;
+        }
         
         drivers.forEach(d => {
             const id = String(d.id).trim(); // Normalize ID
@@ -103,14 +111,13 @@ const initStorage = () => {
                 seen.add(id);
                 cleanDrivers.push({...d, id});
             } else {
-                // If duplicate found, we just remove it (or rename if you preferred, but removal is cleaner for uniqueness)
-                // Here we keep the first one encountered
+                // If duplicate found, we just remove it
                 hasChanges = true;
             }
         });
         
         if (hasChanges) {
-             console.log('Cleaned duplicate drivers from storage on init.');
+             console.log('Cleaned duplicate or banned drivers from storage on init.');
              localStorage.setItem(KEYS.DRIVERS, JSON.stringify(cleanDrivers));
         }
     } catch (e) {
