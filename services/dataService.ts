@@ -88,31 +88,34 @@ const initStorage = () => {
   const existingDriversStr = localStorage.getItem(KEYS.DRIVERS);
   
   if (!existingDriversStr) {
-    // If no drivers exist, initialize with deduplicated mock data
     localStorage.setItem(KEYS.DRIVERS, JSON.stringify(MOCK_DRIVERS));
   } else {
-    // Clean up potential duplicates in existing local storage
+    // Robust duplicate cleaning on load
     try {
         const drivers = JSON.parse(existingDriversStr) as Driver[];
         const seen = new Set();
         const cleanDrivers: Driver[] = [];
+        let hasChanges = false;
         
         drivers.forEach(d => {
-            if (!seen.has(d.id)) {
-                seen.add(d.id);
-                cleanDrivers.push(d);
+            const id = String(d.id).trim(); // Normalize ID
+            if (!seen.has(id)) {
+                seen.add(id);
+                cleanDrivers.push({...d, id});
             } else {
-                // Append random suffix to duplicate ID to fix deletion issues
-                const newId = `${d.id}_${Math.floor(Math.random() * 1000)}`;
-                cleanDrivers.push({ ...d, id: newId });
+                // If duplicate found, we just remove it (or rename if you preferred, but removal is cleaner for uniqueness)
+                // Here we keep the first one encountered
+                hasChanges = true;
             }
         });
         
-        if (drivers.length !== cleanDrivers.length || JSON.stringify(drivers) !== JSON.stringify(cleanDrivers)) {
+        if (hasChanges) {
+             console.log('Cleaned duplicate drivers from storage on init.');
              localStorage.setItem(KEYS.DRIVERS, JSON.stringify(cleanDrivers));
         }
     } catch (e) {
         console.error("Error cleaning drivers", e);
+        localStorage.setItem(KEYS.DRIVERS, JSON.stringify(MOCK_DRIVERS));
     }
   }
   
@@ -154,10 +157,13 @@ export const saveDriver = (driver: Driver): void => {
 };
 
 export const deleteDriver = (id: string): void => {
-  // Filter carefully, ensure ID string matching is robust
-  const targetId = String(id).trim();
-  const drivers = getDrivers().filter(d => d.id !== targetId);
-  localStorage.setItem(KEYS.DRIVERS, JSON.stringify(drivers));
+  const targetId = String(id).trim().toLowerCase();
+  const currentDrivers = getDrivers();
+  
+  // Filter out the driver. Using trim/lowercase ensures loose matching against messy data.
+  const filteredDrivers = currentDrivers.filter(d => String(d.id).trim().toLowerCase() !== targetId);
+  
+  localStorage.setItem(KEYS.DRIVERS, JSON.stringify(filteredDrivers));
 };
 
 export const importDrivers = (newDrivers: Driver[]): void => {
@@ -236,7 +242,8 @@ export const saveNotificationSettings = (settings: NotificationSettings): void =
 
 export const validateScan = (driverId: string, type: CheckinType): { success: boolean; message: string; driver?: Driver } => {
   const drivers = getDrivers();
-  const driver = drivers.find(d => d.id.toLowerCase() === driverId.toLowerCase());
+  // Robust ID matching
+  const driver = drivers.find(d => String(d.id).trim().toLowerCase() === String(driverId).trim().toLowerCase());
 
   if (!driver) {
     return { success: false, message: 'Chauffeur non trouvé.' };

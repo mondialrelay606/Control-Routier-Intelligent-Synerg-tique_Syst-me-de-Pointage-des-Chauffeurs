@@ -592,7 +592,8 @@ export const DriversTab: React.FC = () => {
     const handleDelete = (id: string) => {
         if (window.confirm('Supprimer ce chauffeur ?')) {
             deleteDriver(id);
-            setDrivers([...getDrivers()]); // Force refresh
+            // Force state update by creating a new array reference from the fresh storage data
+            setDrivers([...getDrivers()]); 
         }
     };
 
@@ -626,7 +627,7 @@ export const DriversTab: React.FC = () => {
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h2 className="text-lg font-bold text-brand-primary">Base Chauffeurs</h2>
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-center flex-wrap">
                     <div className="relative overflow-hidden">
                          <button className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded text-sm font-medium">Importer CSV</button>
                          <input type="file" accept=".csv" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
