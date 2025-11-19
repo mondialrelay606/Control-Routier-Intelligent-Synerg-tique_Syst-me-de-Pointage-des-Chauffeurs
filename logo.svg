@@ -1,0 +1,27 @@
+<svg width="550" height="120" viewBox="0 0 550 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(20, 20)">
+    <!-- Base Hexagonal: Brand Primary -->
+    <path d="M40 0 L75 20 L75 60 L40 80 L5 60 L5 20 Z" fill="rgba(156, 0, 88, 0.05)" stroke="#9c0058" stroke-width="2" />
+    
+    <!-- Líneas de Sinergia -->
+    <path d="M20 40 L45 40 L60 25" stroke="#57c4c1" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M20 55 L45 55 L60 70" stroke="#ffcc10" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+    
+    <!-- Nodo Central -->
+    <circle cx="40" cy="40" r="6" fill="#9c0058" />
+  </g>
+
+  <!-- Título -->
+  <text x="110" y="65" font-family="Arial, sans-serif" font-weight="800" font-size="52" fill="#9c0058" letter-spacing="2">
+    CRIS
+  </text>
+  
+  <!-- Subtítulo / Nombre Completo -->
+  <text x="112" y="92" font-family="Arial, sans-serif" font-weight="500" font-size="19" fill="#374151" letter-spacing="0.5">
+    Control Routier Intelligent &amp; Synergétique
+  </text>
+  
+  <!-- Línea decorativa -->
+  <path d="M112 108 L480 108" stroke="#e5e7eb" stroke-width="1" />
+  <path d="M112 108 L180 108" stroke="#57c4c1" stroke-width="3" />
+</svg>
