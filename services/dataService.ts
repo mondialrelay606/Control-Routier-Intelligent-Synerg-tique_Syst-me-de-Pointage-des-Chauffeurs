@@ -8,6 +8,7 @@ const KEYS = {
 };
 
 // --- Mock Data Initialization (Full List) ---
+// IDs have been deduplicated to ensure React renders correctly and deletion works
 const MOCK_DRIVERS: Driver[] = [
   { id: 'C132132', name: 'Karim Mekki', subcontractor: 'BA', plate: '', tour: '', telephone: '+33(0)6.04.14.83.06' },
   { id: 'C068480', name: 'Mohammad Amin Rekan', subcontractor: 'BA', plate: '', tour: '9008', telephone: '+33(0)7.69.59.32.94' },
@@ -41,7 +42,7 @@ const MOCK_DRIVERS: Driver[] = [
   { id: 'C467592', name: 'ALI ALLAHMED', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.86.02.05.29' },
   { id: 'C538202', name: 'Arsen Avahimian', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.49.81.76.03' },
   { id: 'C810342', name: 'Salim Amroune', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.45.69.15.99' },
-  { id: 'C841047', name: 'Alsadig MOHAMED ABAKAR', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.69.11.44.67' },
+  { id: 'C841047_2', name: 'Alsadig MOHAMED ABAKAR', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.69.11.44.67' },
   { id: 'C841352', name: 'mohamed lemrhari', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.59.78.96.63' },
   { id: 'C969240', name: 'issam HASSAN MOHAMMED HASSAN', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.68.69.60.33' },
   { id: 'C268094', name: 'Hacen Negaa', subcontractor: 'TM', plate: '', tour: '', telephone: '+33(0)6.24.14.11.24' },
@@ -63,7 +64,7 @@ const MOCK_DRIVERS: Driver[] = [
   { id: 'C294104', name: 'karim BELGACEM', subcontractor: 'KARR', plate: '', tour: '7005', telephone: '+33(0)7.80.80.54.81' },
   { id: 'C991824', name: 'Margaux Filali', subcontractor: 'KARR', plate: '', tour: '7003', telephone: '+33(0)6.20.38.50.31' },
   { id: 'C838770', name: 'Nour El karrat', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)6.27.38.87.98' },
-  { id: 'C294104', name: 'Ismail Abdel weheb', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)7.80.80.54.81' },
+  { id: 'C294104_2', name: 'Ismail Abdel weheb', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)7.80.80.54.81' },
   { id: 'C506975', name: 'Rahal Faycal', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)6.69.96.85.25' },
   { id: 'C082977', name: 'NASSIM LAURACH', subcontractor: 'PADO', plate: '', tour: '8003', telephone: '+33(0)6.51.19.17.11' },
   { id: 'C080653', name: 'Salim Bechikh', subcontractor: 'PADO', plate: '', tour: '8007', telephone: '+33(0)7.45.19.74.87' },
@@ -84,12 +85,35 @@ const MOCK_DRIVERS: Driver[] = [
 ];
 
 const initStorage = () => {
-  const existingDrivers = localStorage.getItem(KEYS.DRIVERS);
+  const existingDriversStr = localStorage.getItem(KEYS.DRIVERS);
   
-  // If no drivers, or if we detect the old "Mock Data" (length < 10), we overwrite with the full real list
-  // This ensures the user gets the updated list without manually clearing cache.
-  if (!existingDrivers || JSON.parse(existingDrivers).length < 10) {
+  if (!existingDriversStr) {
+    // If no drivers exist, initialize with deduplicated mock data
     localStorage.setItem(KEYS.DRIVERS, JSON.stringify(MOCK_DRIVERS));
+  } else {
+    // Clean up potential duplicates in existing local storage
+    try {
+        const drivers = JSON.parse(existingDriversStr) as Driver[];
+        const seen = new Set();
+        const cleanDrivers: Driver[] = [];
+        
+        drivers.forEach(d => {
+            if (!seen.has(d.id)) {
+                seen.add(d.id);
+                cleanDrivers.push(d);
+            } else {
+                // Append random suffix to duplicate ID to fix deletion issues
+                const newId = `${d.id}_${Math.floor(Math.random() * 1000)}`;
+                cleanDrivers.push({ ...d, id: newId });
+            }
+        });
+        
+        if (drivers.length !== cleanDrivers.length || JSON.stringify(drivers) !== JSON.stringify(cleanDrivers)) {
+             localStorage.setItem(KEYS.DRIVERS, JSON.stringify(cleanDrivers));
+        }
+    } catch (e) {
+        console.error("Error cleaning drivers", e);
+    }
   }
   
   if (!localStorage.getItem(KEYS.CHECKINS)) {
@@ -130,7 +154,9 @@ export const saveDriver = (driver: Driver): void => {
 };
 
 export const deleteDriver = (id: string): void => {
-  const drivers = getDrivers().filter(d => d.id !== id);
+  // Filter carefully, ensure ID string matching is robust
+  const targetId = String(id).trim();
+  const drivers = getDrivers().filter(d => d.id !== targetId);
   localStorage.setItem(KEYS.DRIVERS, JSON.stringify(drivers));
 };
 

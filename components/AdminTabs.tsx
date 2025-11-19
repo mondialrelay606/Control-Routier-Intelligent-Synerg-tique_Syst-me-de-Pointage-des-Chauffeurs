@@ -590,9 +590,9 @@ export const DriversTab: React.FC = () => {
     };
 
     const handleDelete = (id: string) => {
-        if (confirm('Supprimer ce chauffeur ?')) {
+        if (window.confirm('Supprimer ce chauffeur ?')) {
             deleteDriver(id);
-            setDrivers(getDrivers());
+            setDrivers([...getDrivers()]); // Force refresh
         }
     };
 
@@ -664,8 +664,8 @@ export const DriversTab: React.FC = () => {
                                 </td>
                             </tr>
                         )}
-                        {drivers.map(d => (
-                            <tr key={d.id} className="border-b hover:bg-gray-50">
+                        {drivers.map((d, index) => (
+                            <tr key={`${d.id}-${index}`} className="border-b hover:bg-gray-50">
                                 {isEditing === d.id ? (
                                     <>
                                         <td className="p-2 text-gray-500">{d.id}</td>
@@ -689,7 +689,7 @@ export const DriversTab: React.FC = () => {
                                         <td className="px-4 py-2">{d.telephone}</td>
                                         <td className="px-4 py-2 flex gap-2">
                                             <button onClick={() => handleStartEdit(d)} className="text-brand-secondary hover:text-brand-primary"><Icons.Pencil className="w-4 h-4"/></button>
-                                            <button onClick={() => handleDelete(d.id)} className="text-gray-400 hover:text-red-500"><Icons.Trash className="w-4 h-4"/></button>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(d.id); }} className="text-gray-400 hover:text-red-500 p-1"><Icons.Trash className="w-4 h-4"/></button>
                                         </td>
                                     </>
                                 )}
