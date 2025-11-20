@@ -274,9 +274,10 @@ interface ReportModalProps {
   checkin: CheckinRecord;
   existingReport?: ReturnReport;
   onSave: (r: ReturnReport) => void;
+  departureComment?: string;
 }
 
-const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, existingReport, onSave }) => {
+const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, existingReport, onSave, departureComment }) => {
   if (!isOpen) return null;
 
   const [tampon, setTampon] = useState(existingReport?.tamponDuRelais || false);
@@ -334,6 +335,21 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
                             <div className="mt-2 text-sm text-yellow-700">
                                 <p>{checkin.driverIncidentDetails || "Le chauffeur a signalé un incident mais n'a laissé aucun détail."}</p>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Departure Comment Display */}
+            {departureComment && (
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded mb-2">
+                    <div className="flex items-start">
+                        <div className="flex-shrink-0 pt-0.5">
+                            <span className="text-xl">📝</span>
+                        </div>
+                        <div className="ml-3">
+                            <h3 className="text-sm font-bold text-blue-800">Note au Départ</h3>
+                            <p className="mt-1 text-sm text-blue-700 italic">"{departureComment}"</p>
                         </div>
                     </div>
                 </div>
@@ -581,6 +597,16 @@ export const ReportsTab: React.FC = () => {
                     checkin={selectedCheckin}
                     existingReport={reports.find(r => r.checkinId === selectedCheckin.id)}
                     onSave={handleSave}
+                    departureComment={
+                        checkins
+                        .filter(c => 
+                            c.driverId === selectedCheckin.driverId && 
+                            c.type === 'Départ Chauffeur' &&
+                            new Date(c.timestamp).toDateString() === new Date(selectedCheckin.timestamp).toDateString() &&
+                            new Date(c.timestamp) < new Date(selectedCheckin.timestamp)
+                        )
+                        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]?.departureComment
+                    }
                 />
             )}
         </div>
