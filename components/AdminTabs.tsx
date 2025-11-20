@@ -466,9 +466,14 @@ export const ReportsTab: React.FC = () => {
     const [reports, setReports] = useState<ReturnReport[]>(getReports());
     const [selectedCheckin, setSelectedCheckin] = useState<CheckinRecord | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [tourFilter, setTourFilter] = useState('');
 
     const today = new Date().toDateString();
-    const returnCheckins = checkins.filter(c => c.type === 'Retour Tournée' && new Date(c.timestamp).toDateString() === today);
+    const returnCheckins = checkins.filter(c => 
+        c.type === 'Retour Tournée' && 
+        new Date(c.timestamp).toDateString() === today &&
+        c.tour.toLowerCase().includes(tourFilter.toLowerCase())
+    );
 
     const handleOpen = (c: CheckinRecord) => {
         setSelectedCheckin(c);
@@ -484,9 +489,21 @@ export const ReportsTab: React.FC = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-brand-primary">Gestion des Retours (Aujourd'hui)</h2>
-                <button onClick={() => exportReportsToExcel(checkins)} className="px-4 py-2 bg-brand-secondary text-white rounded shadow hover:opacity-90 flex items-center gap-2">
-                    <Icons.Document className="w-5 h-5" /> Rapport Excel Complet
-                </button>
+                <div className="flex items-center gap-3">
+                    <div className="relative">
+                        <input 
+                            type="text" 
+                            placeholder="Filtrer par Tournée..."
+                            className="pl-8 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-secondary w-48"
+                            value={tourFilter}
+                            onChange={e => setTourFilter(e.target.value)}
+                        />
+                        <span className="absolute left-2.5 top-2.5 text-gray-400">🔍</span>
+                    </div>
+                    <button onClick={() => exportReportsToExcel(checkins)} className="px-4 py-2 bg-brand-secondary text-white rounded shadow hover:opacity-90 flex items-center gap-2">
+                        <Icons.Document className="w-5 h-5" /> Rapport Excel Complet
+                    </button>
+                </div>
             </div>
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <table className="w-full text-sm text-left">
@@ -494,6 +511,7 @@ export const ReportsTab: React.FC = () => {
                         <tr>
                             <th className="px-4 py-3">Heure</th>
                             <th className="px-4 py-3">Chauffeur</th>
+                            <th className="px-4 py-3">Tournée</th>
                             <th className="px-4 py-3">Sous-traitant</th>
                             <th className="px-4 py-3">État</th>
                             <th className="px-4 py-3">Incidents</th>
@@ -521,6 +539,7 @@ export const ReportsTab: React.FC = () => {
                                             <span className="ml-2 text-brand-yellow" title="Incident signalé par le chauffeur">⚠️</span>
                                         )}
                                     </td>
+                                    <td className="px-4 py-3 font-mono text-gray-600">{c.tour}</td>
                                     <td className="px-4 py-3 text-gray-500">{c.subcontractor}</td>
                                     <td className="px-4 py-3">
                                         <span className={`px-2 py-1 rounded text-xs font-bold ${report ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
@@ -549,7 +568,7 @@ export const ReportsTab: React.FC = () => {
                         })}
                         {returnCheckins.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">Aucun retour scanné aujourd'hui.</td>
+                                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">Aucun retour scanné correspondant.</td>
                             </tr>
                         )}
                     </tbody>
