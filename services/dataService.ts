@@ -5,14 +5,17 @@ const KEYS = {
   CHECKINS: 'spc_checkins',
   REPORTS: 'spc_reports',
   SETTINGS: 'spc_settings',
+  VERSION: 'spc_db_version' // Key for version control
 };
 
-// --- Mock Data Initialization (Full List) ---
-// IDs have been deduplicated to ensure React renders correctly and deletion works
+// Version 2.1 triggers a force update of the driver list with new data
+const DB_VERSION = '2.1';
+
+// --- Mock Data Initialization (Updated List) ---
 const MOCK_DRIVERS: Driver[] = [
   { id: 'C132132', name: 'Karim Mekki', subcontractor: 'BA', plate: '', tour: '', telephone: '+33(0)6.04.14.83.06' },
   { id: 'C068480', name: 'Mohammad Amin Rekan', subcontractor: 'BA', plate: '', tour: '9008', telephone: '+33(0)7.69.59.32.94' },
-  { id: 'C166317', name: 'Sid ahmed', subcontractor: 'BA', plate: '', tour: '', telephone: '+33(0)6.05.98.45.17' },
+  { id: 'C166317', name: 'Sid ahmed', subcontractor: 'BA', plate: '', tour: '9000', telephone: '+33(0)6.05.98.45.17' },
   { id: 'C178508', name: 'IDRISS Abdelkader', subcontractor: 'BA', plate: '', tour: '9004', telephone: '+33(0)6.04.14.42.18' },
   { id: 'C333554', name: 'SAID BARTOUTILE', subcontractor: 'BA', plate: '', tour: '9003', telephone: '+33(0)6.50.97.76.40' },
   { id: 'C416861', name: 'TAOURIT El-Amine', subcontractor: 'BA', plate: '', tour: '9007', telephone: '+33(0)6.04.09.42.33' },
@@ -23,7 +26,7 @@ const MOCK_DRIVERS: Driver[] = [
   { id: 'C711100', name: 'Nicolas Aoun', subcontractor: 'BA', plate: '', tour: '9001', telephone: '+33(0)6.74.66.32.12' },
   { id: 'C711176', name: 'Bloufa BENKRAMA', subcontractor: 'BA', plate: '', tour: '', telephone: '+33(0)6.95.43.81.11' },
   { id: 'C735861', name: 'Chaoui Oussama', subcontractor: 'BA', plate: '', tour: '', telephone: '+33(0)7.44.24.70.09' },
-  { id: 'C903956', name: 'Ilyes Fathi', subcontractor: 'BA', plate: '', tour: '9005', telephone: '+33(0)7.82.13.32.45' },
+  { id: 'C903956', name: 'Ilyes Fathi', subcontractor: 'BA', plate: '', tour: '', telephone: '+33(0)7.82.13.32.45' },
   { id: 'C595424', name: 'Benichou ILIAS', subcontractor: 'BA', plate: '', tour: '9005', telephone: '+33(0)7.82.13.32.45' },
   { id: 'C273997', name: 'Maurice Mikaele', subcontractor: 'BA', plate: '', tour: '', telephone: '+33(0)6.71.76.24.85' },
   { id: 'C821732', name: 'Naafi Furnadzhiev', subcontractor: 'BA', plate: '', tour: '', telephone: '+33(0)7.53.38.34.90' },
@@ -35,14 +38,14 @@ const MOCK_DRIVERS: Driver[] = [
   { id: 'C841047', name: 'Alsadig MOHAMED', subcontractor: 'M&A', plate: '', tour: '5006', telephone: '' },
   { id: 'C429226', name: 'ahmed alkuraishi', subcontractor: 'M&A', plate: '', tour: '5004', telephone: '+33(0)7.68.79.25.00' },
   { id: 'C635924', name: 'Maan al khuzaee', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)6.42.00.65.02' },
-  { id: 'C463722', name: 'Adam Mansour MohsenMR', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.49.35.93.97' },
-  { id: 'C784486', name: 'Mondher Benglail', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.79.34.74.36' },
+  { id: 'C463722', name: 'Adam Mansour MohsenMR', subcontractor: 'M&A', plate: '', tour: '5007', telephone: '+33(0)7.49.35.93.97' },
+  { id: 'C784486', name: 'Mondher Benglail', subcontractor: 'M&A', plate: '', tour: '5000', telephone: '+33(0)7.79.34.74.36' },
   { id: 'C660713', name: 'BAKHRI IDRISS', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.49.27.19.39' },
-  { id: 'C453596', name: 'Mohamad Nasserdine', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)6.44.04.16.85' },
+  { id: 'C453596', name: 'Mohamad Nasserdine', subcontractor: 'M&A', plate: '', tour: '5005', telephone: '+33(0)6.44.04.16.85' },
   { id: 'C467592', name: 'ALI ALLAHMED', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.86.02.05.29' },
   { id: 'C538202', name: 'Arsen Avahimian', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.49.81.76.03' },
   { id: 'C810342', name: 'Salim Amroune', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.45.69.15.99' },
-  { id: 'C841352', name: 'mohamed lemrhari', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.59.78.96.63' },
+  { id: 'C841352', name: 'mohamed lemrhari', subcontractor: 'M&A', plate: '', tour: '5002', telephone: '+33(0)7.59.78.96.63' },
   { id: 'C969240', name: 'issam HASSAN MOHAMMED HASSAN', subcontractor: 'M&A', plate: '', tour: '', telephone: '+33(0)7.68.69.60.33' },
   { id: 'C268094', name: 'Hacen Negaa', subcontractor: 'TM', plate: '', tour: '', telephone: '+33(0)6.24.14.11.24' },
   { id: 'C118995', name: 'Merakeb Merakeb', subcontractor: 'TM', plate: '', tour: '2002', telephone: '+33(0)7.82.61.16.22' },
@@ -64,7 +67,7 @@ const MOCK_DRIVERS: Driver[] = [
   { id: 'C991824', name: 'Margaux Filali', subcontractor: 'KARR', plate: '', tour: '7003', telephone: '+33(0)6.20.38.50.31' },
   { id: 'C838770', name: 'Nour El karrat', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)6.27.38.87.98' },
   { id: 'C506975', name: 'Rahal Faycal', subcontractor: 'KARR', plate: '', tour: '', telephone: '+33(0)6.69.96.85.25' },
-  { id: 'C082977', name: 'NASSIM LAURACH', subcontractor: 'PADO', plate: '', tour: '8003', telephone: '+33(0)6.51.19.17.11' },
+  { id: 'C082977', name: 'NASSIM LAURACH', subcontractor: 'PADO', plate: '', tour: '', telephone: '+33(0)6.51.19.17.11' },
   { id: 'C080653', name: 'Salim Bechikh', subcontractor: 'PADO', plate: '', tour: '8007', telephone: '+33(0)7.45.19.74.87' },
   { id: 'C417169', name: 'Rachid Moncif', subcontractor: 'PADO', plate: '', tour: '', telephone: '' },
   { id: 'C118423', name: 'HARIATE Abdel', subcontractor: 'PADO', plate: '', tour: '8005', telephone: '+33(0)7.80.28.49.63' },
@@ -76,60 +79,32 @@ const MOCK_DRIVERS: Driver[] = [
   { id: 'C949253', name: 'AMID GHABOURI', subcontractor: 'PADO', plate: '', tour: '', telephone: '+33(0)7.58.64.35.45' },
   { id: 'C942414', name: 'Hicham Krad', subcontractor: 'PADO', plate: '', tour: '', telephone: '+33(0)7.80.61.86.69' },
   { id: 'C953340', name: 'Souleymane Sylla', subcontractor: 'PADO', plate: '', tour: '8001', telephone: '+33(0)6.51.23.08.81' },
-  { id: 'C253285', name: 'Mohamed amarat', subcontractor: 'PADO', plate: '', tour: '', telephone: '+33(0)7.80.37.02.88' },
-  { id: 'C376914', name: 'Abdelssalam chbiki', subcontractor: 'PADO', plate: '', tour: '', telephone: '+33(0)7.80.42.30.01' },
-  { id: 'C426258', name: 'Otmane Bounsal', subcontractor: 'PADO', plate: '', tour: '', telephone: '+33(0)6.04.16.94.66' },
-  { id: 'C976921', name: 'Adel Merabet', subcontractor: 'PADO', plate: '', tour: '', telephone: '+33(0)7.53.28.92.13' }
+  { id: 'C253285', name: 'Mohamed amarat', subcontractor: 'PADO', plate: '', tour: '8006', telephone: '+33(0)7.80.37.02.88' },
+  { id: 'C376914', name: 'Abdelssalam chbiki', subcontractor: 'PADO', plate: '', tour: '8003', telephone: '+33(0)7.80.42.30.01' },
+  { id: 'C426258', name: 'Otmane Bounsal', subcontractor: 'PADO', plate: '', tour: '8007', telephone: '+33(0)6.04.16.94.66' },
+  { id: 'C976921', name: 'Adel Merabet', subcontractor: 'PADO', plate: '', tour: '5008', telephone: '+33(0)7.53.28.92.13' },
+  { id: 'C547601', name: 'Sid Fofana', subcontractor: 'Boue', plate: '', tour: '6001', telephone: '' },
+  { id: 'C596750', name: 'Kaztaoui Brahim', subcontractor: 'KARR', plate: '', tour: '7999', telephone: '' },
+  { id: 'C292§85', name: 'ABDEL Weheb', subcontractor: 'KARR', plate: '', tour: '7005', telephone: '' },
+  { id: 'C566684', name: 'Adam Idris Arezki', subcontractor: 'M&A', plate: '', tour: '5004', telephone: '' },
+  { id: 'C744560', name: 'Arezki Babas', subcontractor: 'Boue', plate: '', tour: '6000', telephone: '' },
+  { id: 'C479386', name: 'Ibhahim Rabahallah', subcontractor: 'BA', plate: '', tour: '9007', telephone: '' }
 ];
 
 const initStorage = () => {
+  const currentVersion = localStorage.getItem(KEYS.VERSION);
   const existingDriversStr = localStorage.getItem(KEYS.DRIVERS);
-  
-  // IDs to be removed from storage if present (legacy data cleanup)
-  const BANNED_IDS = ['C841047_2', 'C294104_2'];
 
-  if (!existingDriversStr) {
+  // Force update if version changed or no drivers exist
+  if (currentVersion !== DB_VERSION) {
+    console.log(`Updating DB from ${currentVersion} to ${DB_VERSION}. Resetting drivers list.`);
     localStorage.setItem(KEYS.DRIVERS, JSON.stringify(MOCK_DRIVERS));
-  } else {
-    // Robust duplicate and banned ID cleaning on load
-    try {
-        let drivers = JSON.parse(existingDriversStr) as Driver[];
-        const seen = new Set();
-        const cleanDrivers: Driver[] = [];
-        let hasChanges = false;
-
-        // Check if we need to remove banned IDs or drivers named 'xxx'
-        const initialLength = drivers.length;
-        drivers = drivers.filter(d => 
-            !BANNED_IDS.includes(d.id) && 
-            d.name.toLowerCase() !== 'xxx' && 
-            d.id.toLowerCase() !== 'xxx' &&
-            d.subcontractor.toLowerCase() !== 'xxx'
-        );
-
-        if (drivers.length !== initialLength) {
-            hasChanges = true;
-        }
-        
-        drivers.forEach(d => {
-            const id = String(d.id).trim(); // Normalize ID
-            if (!seen.has(id)) {
-                seen.add(id);
-                cleanDrivers.push({...d, id});
-            } else {
-                // If duplicate found, we just remove it
-                hasChanges = true;
-            }
-        });
-        
-        if (hasChanges) {
-             console.log('Cleaned duplicate, banned, or "xxx" drivers from storage on init.');
-             localStorage.setItem(KEYS.DRIVERS, JSON.stringify(cleanDrivers));
-        }
-    } catch (e) {
-        console.error("Error cleaning drivers", e);
-        localStorage.setItem(KEYS.DRIVERS, JSON.stringify(MOCK_DRIVERS));
-    }
+    localStorage.setItem(KEYS.VERSION, DB_VERSION);
+    
+    // Optionally preserve checkins/reports if they are critical, 
+    // but here we rely on IDs. Since IDs match the provided list, checkins should be fine.
+  } else if (!existingDriversStr) {
+    localStorage.setItem(KEYS.DRIVERS, JSON.stringify(MOCK_DRIVERS));
   }
   
   if (!localStorage.getItem(KEYS.CHECKINS)) {
