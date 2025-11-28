@@ -28,6 +28,7 @@ export interface SaturationItem {
   lockerName: string;
   sacs: number;
   vracs: number;
+  isReplacement?: boolean; // New: Checkbox for replacement
 }
 
 export interface MissingItem {

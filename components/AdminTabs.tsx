@@ -406,10 +406,31 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
                         <input placeholder="Nom Locker" className="border p-2 text-sm rounded flex-1" value={newSat.lockerName || ''} onChange={e => setNewSat({...newSat, lockerName: e.target.value})} />
                         <input type="number" placeholder="Sacs" className="border p-2 text-sm rounded w-16" value={newSat.sacs || ''} onChange={e => setNewSat({...newSat, sacs: parseInt(e.target.value)})} />
                         <input type="number" placeholder="Vracs" className="border p-2 text-sm rounded w-16" value={newSat.vracs || ''} onChange={e => setNewSat({...newSat, vracs: parseInt(e.target.value)})} />
+                        
+                        {/* Replacement Checkbox */}
+                        <div className="flex items-center gap-1 border p-2 rounded bg-gray-50">
+                           <input 
+                              type="checkbox" 
+                              id="sat-replacement"
+                              checked={newSat.isReplacement || false}
+                              onChange={e => setNewSat({...newSat, isReplacement: e.target.checked})}
+                              className="w-4 h-4 text-brand-secondary accent-brand-secondary"
+                           />
+                           <label htmlFor="sat-replacement" className="text-xs font-bold text-gray-600 cursor-pointer">Remplacement ?</label>
+                        </div>
+
                         <button onClick={() => { if(newSat.lockerName) { setSaturations([...saturations, newSat as SaturationItem]); setNewSat({}); }}} className="bg-brand-secondary text-white px-3 py-2 rounded hover:bg-opacity-90">+</button>
                     </div>
                     <ul className="text-sm space-y-1">
-                        {saturations.map((s, i) => <li key={i} className="flex justify-between bg-gray-50 p-2 rounded border-l-4 border-brand-secondary">{s.lockerName} (Sacs: {s.sacs}, Vracs: {s.vracs}) <button onClick={() => setSaturations(saturations.filter((_, idx) => idx !== i))} className="text-red-500 font-bold px-2">x</button></li>)}
+                        {saturations.map((s, i) => (
+                            <li key={i} className="flex justify-between items-center bg-gray-50 p-2 rounded border-l-4 border-brand-secondary">
+                                <span>
+                                    <span className="font-medium">{s.lockerName}</span> (Sacs: {s.sacs}, Vracs: {s.vracs}) 
+                                    {s.isReplacement && <span className="ml-2 text-xs bg-brand-secondary text-white px-1.5 py-0.5 rounded">Remplacement</span>}
+                                </span>
+                                <button onClick={() => setSaturations(saturations.filter((_, idx) => idx !== i))} className="text-red-500 font-bold px-2">x</button>
+                            </li>
+                        ))}
                     </ul>
                 </div>
                 

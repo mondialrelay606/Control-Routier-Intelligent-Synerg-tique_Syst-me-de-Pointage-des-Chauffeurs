@@ -304,7 +304,7 @@ export const exportReportsToExcel = (checkins: CheckinRecord[]) => {
         };
 
         r.saturationLockers.forEach(item => {
-            incidentRows.push({ ...baseInfo, Catégorie: 'SATURATION', Lieu: item.lockerName, Détail: `Sacs: ${item.sacs}, Vracs: ${item.vracs}` });
+            incidentRows.push({ ...baseInfo, Catégorie: 'SATURATION', Lieu: item.lockerName, Détail: `Sacs: ${item.sacs}, Vracs: ${item.vracs}${item.isReplacement ? ' (Remplacement effectué)' : ''}` });
         });
         r.livraisonsManquantes.forEach(item => {
             incidentRows.push({ ...baseInfo, Catégorie: 'MANQUANT', Lieu: item.pudoApmName, Détail: `Sacs: ${item.sacs}, Vracs: ${item.vracs}` });

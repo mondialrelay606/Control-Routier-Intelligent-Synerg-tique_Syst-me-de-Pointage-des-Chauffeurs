@@ -98,9 +98,15 @@ const initStorage = () => {
         const cleanDrivers: Driver[] = [];
         let hasChanges = false;
 
-        // Check if we need to remove banned IDs
+        // Check if we need to remove banned IDs or drivers named 'xxx'
         const initialLength = drivers.length;
-        drivers = drivers.filter(d => !BANNED_IDS.includes(d.id));
+        drivers = drivers.filter(d => 
+            !BANNED_IDS.includes(d.id) && 
+            d.name.toLowerCase() !== 'xxx' && 
+            d.id.toLowerCase() !== 'xxx' &&
+            d.subcontractor.toLowerCase() !== 'xxx'
+        );
+
         if (drivers.length !== initialLength) {
             hasChanges = true;
         }
@@ -117,7 +123,7 @@ const initStorage = () => {
         });
         
         if (hasChanges) {
-             console.log('Cleaned duplicate or banned drivers from storage on init.');
+             console.log('Cleaned duplicate, banned, or "xxx" drivers from storage on init.');
              localStorage.setItem(KEYS.DRIVERS, JSON.stringify(cleanDrivers));
         }
     } catch (e) {
