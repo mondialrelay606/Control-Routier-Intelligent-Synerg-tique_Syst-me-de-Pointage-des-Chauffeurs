@@ -546,7 +546,8 @@ export const ReportsTab: React.FC = () => {
                 <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50 text-gray-700">
                         <tr>
-                            <th className="px-4 py-3">Heure</th>
+                            <th className="px-4 py-3">Heure Départ</th>
+                            <th className="px-4 py-3">Heure Retour</th>
                             <th className="px-4 py-3">Chauffeur</th>
                             <th className="px-4 py-3">Tournée</th>
                             <th className="px-4 py-3">Sous-traitant</th>
@@ -558,6 +559,17 @@ export const ReportsTab: React.FC = () => {
                     <tbody>
                         {returnCheckins.map(c => {
                             const report = reports.find(r => r.checkinId === c.id);
+                            
+                            // Calculate Departure Time
+                            const departure = checkins
+                                .filter(d => 
+                                    d.driverId === c.driverId && 
+                                    d.type === 'Départ Chauffeur' && 
+                                    new Date(d.timestamp).toDateString() === new Date(c.timestamp).toDateString() &&
+                                    new Date(d.timestamp) < new Date(c.timestamp)
+                                )
+                                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+
                             let incidentCount = 0;
                             if (report) {
                                 incidentCount += report.saturationLockers.length;
@@ -569,7 +581,10 @@ export const ReportsTab: React.FC = () => {
                             
                             return (
                                 <tr key={c.id} className="border-b hover:bg-gray-50">
-                                    <td className="px-4 py-3">{new Date(c.timestamp).toLocaleTimeString('fr-FR')}</td>
+                                    <td className="px-4 py-3 font-mono text-gray-600">
+                                        {departure ? new Date(departure.timestamp).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}) : '-'}
+                                    </td>
+                                    <td className="px-4 py-3">{new Date(c.timestamp).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}</td>
                                     <td className="px-4 py-3 font-medium">
                                         {c.driverName}
                                         {c.driverReportedIssues && (
@@ -605,7 +620,7 @@ export const ReportsTab: React.FC = () => {
                         })}
                         {returnCheckins.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">Aucun retour scanné correspondant.</td>
+                                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">Aucun retour scanné correspondant.</td>
                             </tr>
                         )}
                     </tbody>
