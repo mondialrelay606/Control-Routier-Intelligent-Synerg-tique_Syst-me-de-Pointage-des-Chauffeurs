@@ -59,6 +59,7 @@ export interface ReturnReport {
   refus: RefusItem[]; // New: Refus par PUDO
   devoyes: { sacs: number; vracs: number }; // New: Dévoyés global count
   notes: string;
+  requiresReview?: boolean; // New: Flag to mark for later verification
 }
 
 export interface DashboardStats {

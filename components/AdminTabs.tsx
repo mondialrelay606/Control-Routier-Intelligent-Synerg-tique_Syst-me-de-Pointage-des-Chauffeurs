@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { CheckinRecord, Driver, ReturnReport, SaturationItem, MissingItem, ClosedItem, RefusItem, NotificationSettings } from '../types';
-import { getCheckins, getDrivers, getReports, saveDriver, deleteDriver, saveReport, updateCheckinDepartureComment, clearOldData, importDrivers, getNotificationSettings, saveNotificationSettings } from '../services/dataService';
-import { exportCheckinsToExcel, exportReportsToExcel, parseDriverCSV } from '../utils/fileHelpers';
+import { getCheckins, getDrivers, getReports, saveDriver, deleteDriver, saveReport, updateCheckinDepartureComment, clearOldData, importDrivers, getNotificationSettings, saveNotificationSettings, updateCheckinTour } from '../services/dataService';
+import { exportCheckinsToExcel, exportReportsToExcel, parseDriverExcel } from '../utils/fileHelpers';
 import { requestNotificationPermission } from '../services/notificationService';
 import { Icons } from './Icons';
 
@@ -84,6 +84,23 @@ export const StatsTab: React.FC = () => {
           setCheckins(getCheckins());
           setReports(getReports());
       }
+  };
+
+  const handleExportYesterday = () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toDateString();
+    
+    const yesterdayCheckins = checkins.filter(c => 
+        new Date(c.timestamp).toDateString() === yesterdayStr
+    );
+
+    if (yesterdayCheckins.length === 0) {
+        alert("Aucune donnée trouvée pour la journée d'hier.");
+        return;
+    }
+
+    exportCheckinsToExcel(yesterdayCheckins, `Pointages_Hier_${yesterday.toISOString().slice(0,10)}.xlsx`);
   };
 
   return (
@@ -204,11 +221,14 @@ export const StatsTab: React.FC = () => {
 
       {/* Historical Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="p-4 border-b flex justify-between items-center">
+        <div className="p-4 border-b flex flex-wrap justify-between items-center gap-2">
           <h3 className="font-bold text-brand-primary">Historique Complet</h3>
-          <div className="flex gap-2">
-            <button onClick={handleClean} className="px-3 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded">Nettoyer Anciens</button>
-            <button onClick={() => exportCheckinsToExcel(checkins)} className="px-3 py-1 text-xs bg-brand-primary text-white hover:bg-brand-primary/90 rounded">Export Excel</button>
+          <div className="flex gap-2 items-center flex-wrap">
+            <button onClick={handleExportYesterday} className="px-3 py-1 text-xs bg-gray-500 text-white hover:bg-gray-600 rounded flex items-center gap-1">
+                <Icons.Document className="w-3 h-3" /> Export Hier
+            </button>
+            <button onClick={() => exportCheckinsToExcel(checkins)} className="px-3 py-1 text-xs bg-brand-primary text-white hover:bg-brand-primary/90 rounded">Export Tout</button>
+            <button onClick={handleClean} className="px-3 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded text-red-600">Nettoyer Anciens</button>
           </div>
         </div>
         <div className="overflow-x-auto max-h-96">
@@ -283,6 +303,10 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
   const [tampon, setTampon] = useState(existingReport?.tamponDuRelais || false);
   const [horaire, setHoraire] = useState(existingReport?.horaireDePassageLocker || false);
   const [notes, setNotes] = useState(existingReport?.notes || '');
+  const [requiresReview, setRequiresReview] = useState(existingReport?.requiresReview || false);
+
+  // New: Tour State
+  const [tour, setTour] = useState(checkin.tour);
   
   const [saturations, setSaturations] = useState<SaturationItem[]>(existingReport?.saturationLockers || []);
   const [manquants, setManquants] = useState<MissingItem[]>(existingReport?.livraisonsManquantes || []);
@@ -297,6 +321,11 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
   const [newClo, setNewClo] = useState<Partial<ClosedItem>>({ reason: 'Fermeture sauvage' });
 
   const handleSubmit = () => {
+    // Update tour if changed
+    if (tour !== checkin.tour) {
+        updateCheckinTour(checkin.id, tour);
+    }
+
     const report: ReturnReport = {
       id: existingReport?.id || crypto.randomUUID(),
       checkinId: checkin.id,
@@ -307,7 +336,8 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
       pudosApmFermes: fermes,
       refus: refus,
       devoyes: devoyes,
-      notes
+      notes,
+      requiresReview
     };
     onSave(report);
     onClose();
@@ -322,6 +352,18 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
         </div>
         
         <div className="p-6 space-y-6">
+
+             {/* Tour Modification */}
+            <div className="bg-gray-50 p-3 rounded border border-gray-200 flex items-center gap-4">
+                <label className="text-sm font-bold text-gray-700">Numéro de Tournée :</label>
+                <input 
+                    type="text" 
+                    value={tour} 
+                    onChange={e => setTour(e.target.value)}
+                    className="font-mono font-bold text-lg border-b-2 border-brand-primary bg-transparent focus:outline-none px-2 w-32" 
+                />
+                <span className="text-xs text-gray-400">Modifiable</span>
+            </div>
             
             {/* Driver Reported Issue Warning */}
             {checkin.driverReportedIssues && (
@@ -489,6 +531,24 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
                 />
             </div>
         </div>
+        
+        {/* Verification Checkbox */}
+        <div className="px-6 py-2 bg-purple-50 border-t border-purple-100">
+             <label className="flex items-center gap-3 cursor-pointer">
+                <input 
+                    type="checkbox" 
+                    checked={requiresReview} 
+                    onChange={e => setRequiresReview(e.target.checked)} 
+                    className="w-5 h-5 text-purple-600 accent-purple-600 border-gray-300 rounded focus:ring-purple-500" 
+                />
+                <span className="font-bold text-purple-800 flex items-center gap-2">
+                    <Icons.Flag className="w-4 h-4" />
+                    Marquer pour vérification ultérieure
+                </span>
+             </label>
+             <p className="text-xs text-purple-600 mt-1 ml-8">Cochez cette case si ce rapport nécessite un suivi ou une correction en fin de journée.</p>
+        </div>
+
         <div className="p-6 border-t bg-gray-50 flex justify-end gap-3 sticky bottom-0 z-10">
             <button onClick={onClose} className="px-4 py-2 rounded border bg-white hover:bg-gray-100">Annuler</button>
             <button onClick={handleSubmit} className="px-4 py-2 rounded bg-brand-primary text-white hover:bg-brand-primary/90 font-bold shadow-sm">Sauvegarder Rapport</button>
@@ -499,7 +559,7 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
 };
 
 export const ReportsTab: React.FC = () => {
-    const [checkins] = useState<CheckinRecord[]>(getCheckins());
+    const [checkins, setCheckins] = useState<CheckinRecord[]>(getCheckins());
     const [reports, setReports] = useState<ReturnReport[]>(getReports());
     const [selectedCheckin, setSelectedCheckin] = useState<CheckinRecord | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -520,6 +580,7 @@ export const ReportsTab: React.FC = () => {
     const handleSave = (report: ReturnReport) => {
         saveReport(report);
         setReports(getReports());
+        setCheckins(getCheckins()); // Refresh checkins to show new tour number
     };
 
     return (
@@ -580,7 +641,7 @@ export const ReportsTab: React.FC = () => {
                             }
                             
                             return (
-                                <tr key={c.id} className="border-b hover:bg-gray-50">
+                                <tr key={c.id} className={`border-b hover:bg-gray-50 ${report?.requiresReview ? 'bg-purple-50' : ''}`}>
                                     <td className="px-4 py-3 font-mono text-gray-600">
                                         {departure ? new Date(departure.timestamp).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}) : '-'}
                                     </td>
@@ -594,9 +655,17 @@ export const ReportsTab: React.FC = () => {
                                     <td className="px-4 py-3 font-mono text-gray-600">{c.tour}</td>
                                     <td className="px-4 py-3 text-gray-500">{c.subcontractor}</td>
                                     <td className="px-4 py-3">
-                                        <span className={`px-2 py-1 rounded text-xs font-bold ${report ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                            {report ? 'Rapporté' : 'En attente'}
-                                        </span>
+                                        <div className="flex gap-2">
+                                            <span className={`px-2 py-1 rounded text-xs font-bold ${report ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                                {report ? 'Rapporté' : 'En attente'}
+                                            </span>
+                                            {report?.requiresReview && (
+                                                <span className="px-2 py-1 rounded text-xs font-bold bg-purple-100 text-purple-800 flex items-center gap-1">
+                                                    <Icons.Flag className="w-3 h-3" />
+                                                    À Vérifier
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-4 py-3">
                                         {report && incidentCount > 0 && (
@@ -682,7 +751,8 @@ export const DriversTab: React.FC = () => {
         const file = e.target.files?.[0];
         if (file) {
             try {
-                const newDrivers = await parseDriverCSV(file);
+                // Now using Excel parser
+                const newDrivers = await parseDriverExcel(file);
                 if (newDrivers.length > 0) {
                     if (confirm(`Remplacer la base avec ${newDrivers.length} chauffeurs ?`)) {
                         importDrivers(newDrivers);
@@ -690,7 +760,7 @@ export const DriversTab: React.FC = () => {
                         setFileError('');
                     }
                 } else {
-                    setFileError('Aucun chauffeur valide trouvé dans le CSV.');
+                    setFileError('Aucun chauffeur valide trouvé dans le fichier Excel.');
                 }
             } catch (err) {
                 setFileError('Erreur de lecture du fichier.');
@@ -710,13 +780,28 @@ export const DriversTab: React.FC = () => {
                 <h2 className="text-lg font-bold text-brand-primary">Base Chauffeurs</h2>
                 <div className="flex gap-2 items-center flex-wrap">
                     <div className="relative overflow-hidden">
-                         <button className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded text-sm font-medium">Importer CSV</button>
-                         <input type="file" accept=".csv" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
+                         <button className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm font-medium flex items-center gap-2">
+                             <Icons.Document className="w-4 h-4" />
+                             Importer Excel
+                         </button>
+                         <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
                     </div>
                     <button onClick={handleAddNew} className="bg-brand-primary text-white px-3 py-2 rounded text-sm font-medium">Ajouter Nouveau</button>
                 </div>
             </div>
             {fileError && <p className="text-red-500 text-sm">{fileError}</p>}
+
+            {/* Excel Instruction Box */}
+            <div className="bg-blue-50 text-blue-800 p-4 rounded-lg border border-blue-200 text-sm">
+                <p className="font-bold flex items-center gap-2 mb-2">
+                    <Icons.Info className="w-4 h-4" /> 
+                    Format Excel attendu (.xlsx) :
+                </p>
+                <ul className="list-disc list-inside space-y-1 ml-1 text-blue-700">
+                    <li>Colonnes requises (en-têtes) : <b>ID</b> (ou Identifiant), <b>Nom</b>, <b>Sous-traitant</b>, <b>Tournée</b>, <b>Plaque</b>, <b>Téléphone</b>.</li>
+                    <li>La première ligne du fichier doit contenir les titres de ces colonnes.</li>
+                </ul>
+            </div>
             
             <div className="bg-white rounded-lg shadow overflow-x-auto">
                 <table className="w-full text-sm text-left">
@@ -757,8 +842,8 @@ export const DriversTab: React.FC = () => {
                                         <td className="p-2"><input className="w-full border rounded p-1" value={editForm.tour} onChange={e => setEditForm({...editForm, tour: e.target.value})} /></td>
                                         <td className="p-2"><input className="w-full border rounded p-1" value={editForm.telephone} onChange={e => setEditForm({...editForm, telephone: e.target.value})} /></td>
                                         <td className="p-2 flex gap-2">
-                                            <button onClick={handleSave} className="text-green-600 font-bold">V</button>
-                                            <button onClick={() => setIsEditing(null)} className="text-red-600 font-bold">X</button>
+                                            <button onClick={() => handleStartEdit(d)} className="text-brand-secondary hover:text-brand-primary"><Icons.Pencil className="w-4 h-4"/></button>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(d.id); }} className="text-gray-400 hover:text-red-500 p-1"><Icons.Trash className="w-4 h-4"/></button>
                                         </td>
                                     </>
                                 ) : (

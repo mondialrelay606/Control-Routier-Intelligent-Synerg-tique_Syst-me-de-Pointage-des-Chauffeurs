@@ -3,46 +3,47 @@ import saveAs from 'file-saver';
 import { CheckinRecord, Driver, ReturnReport } from '../types';
 import { getDrivers, getReports } from '../services/dataService';
 
-// --- CSV Helper ---
-export const parseDriverCSV = (file: File): Promise<Driver[]> => {
+// --- Excel Import Helper ---
+export const parseDriverExcel = (file: File): Promise<Driver[]> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const text = e.target?.result as string;
-        const lines = text.split('\n');
-        const drivers: Driver[] = [];
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
         
-        // Skip header if exists, assuming simple structure
-        // Nom, Sous-traitant, Plaque, Tournée, Identifiant, Telephone
+        // Assume data is in the first sheet
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
         
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            const cols = line.split(',');
-            if (cols.length >= 5) {
-                drivers.push({
-                    name: cols[0].trim(),
-                    subcontractor: cols[1].trim(),
-                    plate: cols[2].trim(),
-                    tour: cols[3].trim(),
-                    id: cols[4].trim(),
-                    telephone: cols[5]?.trim() || ''
-                });
-            }
-        }
+        // Convert to JSON
+        const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+        
+        const drivers: Driver[] = jsonData.map((row: any) => {
+            // Flexible column mapping to handle variations in headers
+            return {
+                name: row['Nom'] || row['nom'] || row['Name'] || '',
+                subcontractor: row['Sous-traitant'] || row['sous-traitant'] || row['Subcontractor'] || '',
+                plate: row['Plaque'] || row['plaque'] || row['Plate'] || '',
+                tour: row['Tournée'] || row['Tournee'] || row['tournee'] || row['Tour'] || '',
+                // Ensure ID is a string and handle common column names for ID
+                id: String(row['Identifiant'] || row['ID'] || row['id'] || row['Matricule'] || '').trim(),
+                telephone: row['Telephone'] || row['Téléphone'] || row['telephone'] || ''
+            };
+        }).filter(d => d.id && d.name); // Filter out empty or invalid rows
+
         resolve(drivers);
       } catch (error) {
         reject(error);
       }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   });
 };
 
 // --- Excel Helpers ---
 
-export const exportCheckinsToExcel = (checkins: CheckinRecord[]) => {
+export const exportCheckinsToExcel = (checkins: CheckinRecord[], customFileName?: string) => {
   const data = checkins.map(c => ({
     'Date': new Date(c.timestamp).toLocaleDateString('fr-FR'),
     'Heure': new Date(c.timestamp).toLocaleTimeString('fr-FR'),
@@ -59,7 +60,9 @@ export const exportCheckinsToExcel = (checkins: CheckinRecord[]) => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Pointages");
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `Pointages_${new Date().toISOString().slice(0,10)}.xlsx`);
+  
+  const fileName = customFileName || `Pointages_${new Date().toISOString().slice(0,10)}.xlsx`;
+  saveAs(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
 };
 
 export const exportReportsToExcel = (checkins: CheckinRecord[]) => {
@@ -76,6 +79,55 @@ export const exportReportsToExcel = (checkins: CheckinRecord[]) => {
     const totalTours = departures.length;
     const totalReturns = returns.length;
     const completionRate = totalTours > 0 ? Math.round((totalReturns / totalTours) * 100) : 0;
+    
+    // Uniform Compliance
+    const uniformOk = departures.filter(d => d.hasUniform).length;
+    const uniformRate = totalTours > 0 ? Math.round((uniformOk / totalTours) * 100) : 0;
+
+    // Duration Calculation & Top Drivers Logic
+    let totalDurationMinutes = 0;
+    let completedDurations = 0;
+    const driverStats: Record<string, { name: string, sub: string, incidents: number }> = {};
+
+    returns.forEach(ret => {
+        // Match with departure
+        const dep = departures.find(d => 
+            d.driverId === ret.driverId && 
+            new Date(d.timestamp) < new Date(ret.timestamp)
+        );
+
+        if (dep) {
+            const diffMs = new Date(ret.timestamp).getTime() - new Date(dep.timestamp).getTime();
+            const diffMins = Math.floor(diffMs / 60000);
+            // Ignore outliers (> 24h or negative)
+            if (diffMins > 0 && diffMins < 1440) {
+                totalDurationMinutes += diffMins;
+                completedDurations++;
+            }
+        }
+        
+        // Count incidents per driver
+        const r = reports.find(rep => rep.checkinId === ret.id);
+        if (r) {
+            let count = r.saturationLockers.length + r.livraisonsManquantes.length + r.pudosApmFermes.length + (r.refus?.length || 0);
+            if(r.devoyes && (r.devoyes.sacs > 0 || r.devoyes.vracs > 0)) count++;
+            
+            if (count > 0) {
+                if (!driverStats[ret.driverId]) {
+                    driverStats[ret.driverId] = { name: ret.driverName, sub: ret.subcontractor, incidents: 0 };
+                }
+                driverStats[ret.driverId].incidents += count;
+            }
+        }
+    });
+
+    const avgDuration = completedDurations > 0 ? Math.floor(totalDurationMinutes / completedDurations) : 0;
+    const avgDurationStr = `${Math.floor(avgDuration / 60)}h ${avgDuration % 60}m`;
+
+    // Top 3 Drivers with incidents
+    const topOffenders = Object.values(driverStats)
+        .sort((a, b) => b.incidents - a.incidents)
+        .slice(0, 3);
 
     // Incident Totals
     let totalSatSacs = 0, totalSatVracs = 0;
@@ -139,134 +191,184 @@ export const exportReportsToExcel = (checkins: CheckinRecord[]) => {
         }
     });
 
-    // Hourly Distribution
-    const hourlyData: Record<number, { dep: number, ret: number }> = {};
-    for(let i=0; i<24; i++) hourlyData[i] = { dep: 0, ret: 0 };
-    
-    checkins.forEach(c => {
-        const h = new Date(c.timestamp).getHours();
-        if (c.type === 'Départ Chauffeur') hourlyData[h].dep++;
-        else hourlyData[h].ret++;
-    });
+    // --- CREATE WORKBOOK ---
+    const wb = XLSX.utils.book_new();
 
-    // --- 2. CONSTRUCTING THE DASHBOARD SHEET (Array of Arrays) ---
-    
+    // 1. DASHBOARD SHEET
     const dashboard: any[][] = [];
+    dashboard.push(["RAPPORT DE CONTRÔLE LOGISTIQUE - CRIS"]);
+    dashboard.push([`Date du rapport: ${new Date().toLocaleDateString('fr-FR')}`]);
+    dashboard.push([""]); 
 
-    // Title Section
-    dashboard.push(["RAPPORT D'ACTIVITÉ OPÉRATIONNELLE - CRIS"]);
-    dashboard.push([`Généré le: ${new Date().toLocaleString('fr-FR')}`]);
-    dashboard.push([""]); // Spacer
-
-    // Section 1: KPIs Overview
-    dashboard.push(["1. SYNTHÈSE DE L'ACTIVITÉ"]);
-    dashboard.push(["Indicateur", "Valeur", "Description"]);
-    dashboard.push(["Total Départs (Tournées)", totalTours, "Nombre total de chauffeurs partis."]);
-    dashboard.push(["Total Retours", totalReturns, "Nombre de chauffeurs revenus au dépôt."]);
-    dashboard.push(["Taux de Retour", `${completionRate}%`, "Proportion de tournées terminées."]);
-    dashboard.push(["Chauffeurs Uniques", uniqueDrivers, "Nombre de personnes distinctes."]);
-    dashboard.push(["Rapports d'Incidents", totalReports, "Nombre de retours avec incidents signalés."]);
+    dashboard.push(["1. PERFORMANCE OPÉRATIONNELLE"]);
+    dashboard.push(["Indicateur", "Valeur", "Objectif / Description"]);
+    dashboard.push(["Taux de Retour", `${completionRate}%`, "Objectif: 100%"]);
+    dashboard.push(["Conformité Tenue", `${uniformRate}%`, "Port du gilet/chaussures au départ"]);
+    dashboard.push(["Durée Moyenne Tournée", avgDurationStr, "Temps moyen Départ-Retour"]);
+    dashboard.push(["Rapports d'Incidents", totalReports, `Sur ${totalReturns} retours effectués`]);
     dashboard.push([""]);
 
-    // Section 2: Incident Breakdown
-    dashboard.push(["2. DÉTAIL DES INCIDENTS LOGISTIQUES"]);
-    dashboard.push(["Catégorie", "Total Incidents", "Détail Volumétrique (Sacs / Vracs)"]);
-    
-    dashboard.push([
-        "Saturations Lockers", 
-        totalSatSacs + totalSatVracs, 
-        `${totalSatSacs} Sacs / ${totalSatVracs} Vracs`
-    ]);
-    dashboard.push([
-        "Livraisons Manquantes", 
-        totalManqSacs + totalManqVracs, 
-        `${totalManqSacs} Sacs / ${totalManqVracs} Vracs`
-    ]);
-    dashboard.push([
-        "Refus PUDO/APM", 
-        totalRefusSacs + totalRefusVracs, 
-        `${totalRefusSacs} Sacs / ${totalRefusVracs} Vracs`
-    ]);
-    dashboard.push([
-        "Colis Dévoyés", 
-        totalDevoyesSacs + totalDevoyesVracs, 
-        `${totalDevoyesSacs} Sacs / ${totalDevoyesVracs} Vracs`
-    ]);
-    dashboard.push([
-        "Points Fermés (Panne/Sauvage)", 
-        totalClosed, 
-        "N/A"
-    ]);
+    dashboard.push(["2. ANALYSE VOLUMÉTRIQUE DES INCIDENTS"]);
+    dashboard.push(["Catégorie", "Total", "Détail (Sacs / Vracs)"]);
+    dashboard.push(["Saturations", totalSatSacs + totalSatVracs, `${totalSatSacs} Sacs / ${totalSatVracs} Vracs`]);
+    dashboard.push(["Manquants", totalManqSacs + totalManqVracs, `${totalManqSacs} Sacs / ${totalManqVracs} Vracs`]);
+    dashboard.push(["Refus", totalRefusSacs + totalRefusVracs, `${totalRefusSacs} Sacs / ${totalRefusVracs} Vracs`]);
+    dashboard.push(["Dévoyés", totalDevoyesSacs + totalDevoyesVracs, `${totalDevoyesSacs} Sacs / ${totalDevoyesVracs} Vracs`]);
+    dashboard.push(["Fermetures", totalClosed, "Magasins ou Lockers fermés"]);
     dashboard.push([""]);
 
-    // Section 3: Hourly Analysis
-    dashboard.push(["3. DISTRIBUTION HORAIRE"]);
-    dashboard.push(["Heure", "Flux Départs", "Flux Retours", "Activité Totale"]);
-    Object.keys(hourlyData).forEach(h => {
-        const hour = parseInt(h);
-        if (hourlyData[hour].dep > 0 || hourlyData[hour].ret > 0) {
-            dashboard.push([
-                `${h}h00 - ${h}h59`,
-                hourlyData[hour].dep,
-                hourlyData[hour].ret,
-                hourlyData[hour].dep + hourlyData[hour].ret
-            ]);
-        }
+    dashboard.push(["3. FLOP 3 CHAUFFEURS (Plus d'incidents)"]);
+    dashboard.push(["Nom", "Sous-traitant", "Nombre d'Incidents"]);
+    topOffenders.forEach(d => {
+        dashboard.push([d.name, d.sub, d.incidents]);
     });
+    if (topOffenders.length === 0) dashboard.push(["Aucun incident majeur", "-", "-"]);
     dashboard.push([""]);
 
-    // Section 4: Subcontractor Performance
-    dashboard.push(["4. PERFORMANCE PAR SOUS-TRAITANT"]);
+    dashboard.push(["4. CLASSEMENT SOUS-TRAITANTS"]);
     dashboard.push([
-        "Sous-traitant", 
-        "Tournées Effectuées", 
-        "Saturations", 
-        "Manquants", 
-        "Refus", 
-        "Fermetures", 
-        "Total Incidents",
-        "Moyenne Incidents/Tour"
+        "Sous-traitant", "Tournées", "Incidents Totaux", "Moyenne/Tour", "Saturations", "Manquants"
     ]);
 
     const subRows = Object.keys(subStats).map(key => {
         const s = subStats[key];
         const avg = s.tours > 0 ? (s.incidents / s.tours).toFixed(2) : "0.00";
-        return [
-            key,
-            s.tours,
-            s.sat,
-            s.manq,
-            s.refus,
-            s.closed,
-            s.incidents,
-            avg
-        ];
+        return [key, s.tours, s.incidents, avg, s.sat, s.manq];
     });
-
-    // Sort by most incidents
-    subRows.sort((a: any, b: any) => b[6] - a[6]);
+    subRows.sort((a: any, b: any) => b[2] - a[2]); 
     subRows.forEach(row => dashboard.push(row));
 
-    // --- CREATE WORKBOOK ---
-
-    const wb = XLSX.utils.book_new();
-
-    // Sheet 1: Dashboard (AOA)
     const wsDashboard = XLSX.utils.aoa_to_sheet(dashboard);
-    
-    // Styling Column Widths for Dashboard
-    wsDashboard['!cols'] = [
-        { wch: 35 }, // Label Column
-        { wch: 20 }, // Value Column
-        { wch: 35 }, // Description/Detail Column
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 20 }
-    ];
+    wsDashboard['!cols'] = [{ wch: 35 }, { wch: 20 }, { wch: 35 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, wsDashboard, "Tableau de Bord");
 
-    // Sheet 2: Raw Data
+    // 2. DETAILED INCIDENTS SHEET (Restored)
+    const allIncidents: any[] = [];
+    returns.forEach(c => {
+        const r = reports.find(rep => rep.checkinId === c.id);
+        if (!r) return;
+
+        const baseRow = {
+            'Date': new Date(c.timestamp).toLocaleDateString('fr-FR'),
+            'Chauffeur': c.driverName,
+            'Sous-traitant': c.subcontractor,
+            'Tournée': c.tour
+        };
+
+        r.saturationLockers.forEach(i => {
+            allIncidents.push({ ...baseRow, 'Type': 'SATURATION', 'Lieu': i.lockerName, 'Détail': `${i.sacs} S / ${i.vracs} V ${i.isReplacement ? '(Rempl.)' : ''}` });
+        });
+        r.livraisonsManquantes.forEach(i => {
+            allIncidents.push({ ...baseRow, 'Type': 'MANQUANT', 'Lieu': i.pudoApmName, 'Détail': `${i.sacs} S / ${i.vracs} V` });
+        });
+        r.refus?.forEach(i => {
+            allIncidents.push({ ...baseRow, 'Type': 'REFUS', 'Lieu': i.pudoApmName, 'Détail': `${i.sacs} S / ${i.vracs} V` });
+        });
+        r.pudosApmFermes.forEach(i => {
+            allIncidents.push({ ...baseRow, 'Type': 'FERMETURE', 'Lieu': i.pudoApmName, 'Détail': i.reason });
+        });
+        if (r.devoyes && (r.devoyes.sacs > 0 || r.devoyes.vracs > 0)) {
+            allIncidents.push({ ...baseRow, 'Type': 'DÉVOYÉS', 'Lieu': 'Global', 'Détail': `${r.devoyes.sacs} S / ${r.devoyes.vracs} V` });
+        }
+    });
+
+    if (allIncidents.length > 0) {
+        const wsIncidents = XLSX.utils.json_to_sheet(allIncidents);
+        wsIncidents['!cols'] = [{ wch: 12 }, { wch: 25 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 25 }];
+        XLSX.utils.book_append_sheet(wb, wsIncidents, "Détail Incidents");
+    } else {
+        // Create empty sheet structure if no incidents
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Aucun incident à signaler"]]), "Détail Incidents");
+    }
+
+    // 3. SUBCONTRACTOR SHEETS
+    const allSubs = Array.from(new Set(checkins.map(c => c.subcontractor).filter(s => s && s !== '')));
+    allSubs.forEach(sub => {
+        const subSheet: any[][] = [];
+        subSheet.push([`RAPPORT DÉTAILLÉ: ${sub.toUpperCase()}`]);
+        subSheet.push([`Date: ${new Date().toLocaleDateString('fr-FR')}`]);
+        subSheet.push([""]);
+
+        const sStats = subStats[sub] || { tours: 0, incidents: 0 };
+        subSheet.push(["Tournées du jour", sStats.tours]);
+        subSheet.push(["Incidents signalés", sStats.incidents]);
+        subSheet.push([""]);
+
+        subSheet.push(["LISTE DES CHAUFFEURS"]);
+        subSheet.push(["Chauffeur", "Tournée", "Départ", "Retour", "Durée", "Statut"]);
+        
+        const subReturns = returns.filter(r => r.subcontractor === sub);
+        const subDepartures = departures.filter(d => d.subcontractor === sub);
+        const subDrivers = new Set([...subReturns.map(r => r.driverId), ...subDepartures.map(d => d.driverId)]);
+
+        subDrivers.forEach(did => {
+            const dep = subDepartures.find(d => d.driverId === did);
+            const ret = subReturns.find(r => r.driverId === did);
+            const driverName = dep?.driverName || ret?.driverName || 'Inconnu';
+            const tourName = dep?.tour || ret?.tour || '?';
+            
+            let durationStr = "-";
+            if (dep && ret) {
+                 const diffMs = new Date(ret.timestamp).getTime() - new Date(dep.timestamp).getTime();
+                 const h = Math.floor(diffMs / 3600000);
+                 const m = Math.floor((diffMs % 3600000) / 60000);
+                 durationStr = `${h}h ${m}m`;
+            }
+
+            let status = "OK";
+            if (dep && !ret) status = "EN COURS";
+            if (!dep && ret) status = "RETOUR SANS DEPART";
+
+            subSheet.push([
+                driverName,
+                tourName,
+                dep ? new Date(dep.timestamp).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '-',
+                ret ? new Date(ret.timestamp).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '-',
+                durationStr,
+                status
+            ]);
+        });
+        subSheet.push([""]);
+
+        subSheet.push(["DÉTAIL DES ANOMALIES (Pour action)"]);
+        subSheet.push(["Chauffeur", "Type", "Lieu / Locker", "Détails (Sacs/Vracs)"]);
+        
+        let hasAnomalies = false;
+        subReturns.forEach(ret => {
+            const r = reports.find(rep => rep.checkinId === ret.id);
+            if (r) {
+                 r.saturationLockers.forEach(i => {
+                    subSheet.push([ret.driverName, "SATURATION", i.lockerName, `${i.sacs} S / ${i.vracs} V ${i.isReplacement ? '(Rempl.)' : ''}`]);
+                    hasAnomalies = true;
+                 });
+                 r.livraisonsManquantes.forEach(i => {
+                    subSheet.push([ret.driverName, "MANQUANT", i.pudoApmName, `${i.sacs} S / ${i.vracs} V`]);
+                    hasAnomalies = true;
+                 });
+                 r.refus?.forEach(i => {
+                    subSheet.push([ret.driverName, "REFUS", i.pudoApmName, `${i.sacs} S / ${i.vracs} V`]);
+                    hasAnomalies = true;
+                 });
+                 r.pudosApmFermes.forEach(i => {
+                    subSheet.push([ret.driverName, "FERMETURE", i.pudoApmName, i.reason]);
+                    hasAnomalies = true;
+                 });
+                 if (r.devoyes && (r.devoyes.sacs > 0 || r.devoyes.vracs > 0)) {
+                    subSheet.push([ret.driverName, "DÉVOYÉS", "Global", `${r.devoyes.sacs} S / ${r.devoyes.vracs} V`]);
+                    hasAnomalies = true;
+                 }
+            }
+        });
+
+        if(!hasAnomalies) subSheet.push(["Aucune anomalie signalée.", "", "", ""]);
+
+        const wsSub = XLSX.utils.aoa_to_sheet(subSheet);
+        wsSub['!cols'] = [{ wch: 25 }, { wch: 15 }, { wch: 25 }, { wch: 30 }, { wch: 10 }, { wch: 15 }];
+        const safeName = sub.replace(/[*?\/\[\]]/g, '');
+        XLSX.utils.book_append_sheet(wb, wsSub, `Rap_${safeName.slice(0, 20)}`);
+    });
+
+    // 4. RAW DATA SHEET
     const flatData = returns.map(c => {
         const report = reports.find(r => r.checkinId === c.id);
         return {
@@ -275,59 +377,15 @@ export const exportReportsToExcel = (checkins: CheckinRecord[]) => {
             'Chauffeur': c.driverName,
             'Sous-traitant': c.subcontractor,
             'Tournée': c.tour,
-            'Rapport Créé': report ? 'Oui' : 'Non',
-            'Tampon Relais': report?.tamponDuRelais ? 'OK' : 'NOK',
-            'Horaire Passage': report?.horaireDePassageLocker ? 'OK' : 'NOK',
             'Nb Saturation': report?.saturationLockers.length || 0,
             'Nb Manquants': report?.livraisonsManquantes.length || 0,
             'Nb Refus': report?.refus ? report.refus.length : 0,
-            'Nb Dévoyés (Sacs)': report?.devoyes ? report.devoyes.sacs : 0,
-            'Nb Dévoyés (Vracs)': report?.devoyes ? report.devoyes.vracs : 0,
-            'Nb Fermés': report?.pudosApmFermes.length || 0,
             'Notes': report?.notes || ''
         };
     });
     const wsData = XLSX.utils.json_to_sheet(flatData);
-
-    // Sheet 3: Detailed Incidents
-    const incidentRows: any[] = [];
-    reports.forEach(r => {
-        // Ensure report belongs to the filtered dataset (e.g. today)
-        const relatedCheckin = returns.find(rc => rc.id === r.checkinId);
-        if (!relatedCheckin) return;
-
-        const baseInfo = {
-            'Chauffeur': relatedCheckin.driverName,
-            'Tournée': relatedCheckin.tour,
-            'Sous-traitant': relatedCheckin.subcontractor,
-            'Heure Retour': new Date(relatedCheckin.timestamp).toLocaleTimeString('fr-FR')
-        };
-
-        r.saturationLockers.forEach(item => {
-            incidentRows.push({ ...baseInfo, Catégorie: 'SATURATION', Lieu: item.lockerName, Détail: `Sacs: ${item.sacs}, Vracs: ${item.vracs}${item.isReplacement ? ' (Remplacement effectué)' : ''}` });
-        });
-        r.livraisonsManquantes.forEach(item => {
-            incidentRows.push({ ...baseInfo, Catégorie: 'MANQUANT', Lieu: item.pudoApmName, Détail: `Sacs: ${item.sacs}, Vracs: ${item.vracs}` });
-        });
-        if (r.refus) {
-            r.refus.forEach(item => {
-                incidentRows.push({ ...baseInfo, Catégorie: 'REFUS', Lieu: item.pudoApmName, Détail: `Sacs: ${item.sacs}, Vracs: ${item.vracs}` });
-            });
-        }
-        r.pudosApmFermes.forEach(item => {
-            incidentRows.push({ ...baseInfo, Catégorie: 'FERMETURE', Lieu: item.pudoApmName, Détail: item.reason });
-        });
-        if (r.devoyes && (r.devoyes.sacs > 0 || r.devoyes.vracs > 0)) {
-             incidentRows.push({ ...baseInfo, Catégorie: 'DÉVOYÉS', Lieu: 'Global Tournée', Détail: `Sacs: ${r.devoyes.sacs}, Vracs: ${r.devoyes.vracs}` });
-        }
-    });
-    const wsIncidents = XLSX.utils.json_to_sheet(incidentRows);
-
-    // Append Sheets
-    XLSX.utils.book_append_sheet(wb, wsDashboard, "Tableau de Bord");
     XLSX.utils.book_append_sheet(wb, wsData, "Données Brutes");
-    XLSX.utils.book_append_sheet(wb, wsIncidents, "Détail Incidents");
-    
+
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `Rapport_CRIS_Complet_${new Date().toISOString().slice(0,10)}.xlsx`);
 };

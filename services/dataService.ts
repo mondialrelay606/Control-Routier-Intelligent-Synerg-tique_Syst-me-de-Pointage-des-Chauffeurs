@@ -180,6 +180,15 @@ export const updateCheckinDepartureComment = (id: string, comment: string): void
     }
 };
 
+export const updateCheckinTour = (id: string, newTour: string): void => {
+    const checkins = getCheckins();
+    const idx = checkins.findIndex(c => c.id === id);
+    if (idx !== -1) {
+        checkins[idx].tour = newTour;
+        localStorage.setItem(KEYS.CHECKINS, JSON.stringify(checkins));
+    }
+};
+
 export const clearOldData = (): void => {
     const today = new Date().toDateString();
     const checkins = getCheckins().filter(c => new Date(c.timestamp).toDateString() === today);
