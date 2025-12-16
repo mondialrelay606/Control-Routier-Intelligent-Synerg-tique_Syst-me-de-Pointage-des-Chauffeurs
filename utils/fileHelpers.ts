@@ -65,7 +65,7 @@ export const exportCheckinsToExcel = (checkins: CheckinRecord[], customFileName?
   saveAs(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
 };
 
-export const exportReportsToExcel = (checkins: CheckinRecord[]) => {
+export const exportReportsToExcel = (checkins: CheckinRecord[], customFileName?: string) => {
     const reports = getReports();
     
     // Filter data (usually 'checkins' passed here are filtered by today or specific range in UI)
@@ -386,6 +386,7 @@ export const exportReportsToExcel = (checkins: CheckinRecord[]) => {
     const wsData = XLSX.utils.json_to_sheet(flatData);
     XLSX.utils.book_append_sheet(wb, wsData, "Données Brutes");
 
+    const fileName = customFileName || `Rapport_CRIS_Complet_${new Date().toISOString().slice(0,10)}.xlsx`;
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `Rapport_CRIS_Complet_${new Date().toISOString().slice(0,10)}.xlsx`);
+    saveAs(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
 };

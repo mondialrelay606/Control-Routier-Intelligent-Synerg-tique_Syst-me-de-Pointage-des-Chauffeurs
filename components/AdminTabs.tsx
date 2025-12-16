@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { CheckinRecord, Driver, ReturnReport, SaturationItem, MissingItem, ClosedItem, RefusItem, NotificationSettings } from '../types';
-import { getCheckins, getDrivers, getReports, saveDriver, deleteDriver, saveReport, updateCheckinDepartureComment, clearOldData, importDrivers, getNotificationSettings, saveNotificationSettings, updateCheckinTour } from '../services/dataService';
+import { getCheckins, getDrivers, getReports, saveDriver, deleteDriver, saveReport, updateCheckinDepartureComment, clearOldData, importDrivers, getNotificationSettings, saveNotificationSettings, updateCheckinTour, resetAllData } from '../services/dataService';
 import { exportCheckinsToExcel, exportReportsToExcel, parseDriverExcel } from '../utils/fileHelpers';
-import { requestNotificationPermission } from '../services/notificationService';
+import { requestNotificationPermission, sendLocalNotification } from '../services/notificationService';
 import { Icons } from './Icons';
 
 // --- Tab A: Statistics ---
@@ -559,159 +559,130 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, checkin, exi
 };
 
 export const ReportsTab: React.FC = () => {
-    const [checkins, setCheckins] = useState<CheckinRecord[]>(getCheckins());
+    const [checkins] = useState<CheckinRecord[]>(getCheckins());
     const [reports, setReports] = useState<ReturnReport[]>(getReports());
+    const [filterDate, setFilterDate] = useState(new Date().toISOString().slice(0, 10));
+    const [modalOpen, setModalOpen] = useState(false);
     const [selectedCheckin, setSelectedCheckin] = useState<CheckinRecord | null>(null);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [tourFilter, setTourFilter] = useState('');
 
-    const today = new Date().toDateString();
-    const returnCheckins = checkins.filter(c => 
-        c.type === 'Retour Tournée' && 
-        new Date(c.timestamp).toDateString() === today &&
-        c.tour.toLowerCase().includes(tourFilter.toLowerCase())
-    );
-
-    const handleOpen = (c: CheckinRecord) => {
-        setSelectedCheckin(c);
-        setIsModalOpen(true);
+    const handleOpenReport = (checkin: CheckinRecord) => {
+        setSelectedCheckin(checkin);
+        setModalOpen(true);
     };
 
-    const handleSave = (report: ReturnReport) => {
+    const handleSaveReport = (report: ReturnReport) => {
         saveReport(report);
         setReports(getReports());
-        setCheckins(getCheckins()); // Refresh checkins to show new tour number
+        setModalOpen(false);
+    };
+
+    const filteredReturns = checkins
+        .filter(c => c.type === 'Retour Tournée' && new Date(c.timestamp).toDateString() === new Date(filterDate).toDateString())
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    const getDeparture = (ret: CheckinRecord) => {
+        return checkins.find(c => 
+            c.driverId === ret.driverId && 
+            c.type === 'Départ Chauffeur' && 
+            new Date(c.timestamp) < new Date(ret.timestamp) &&
+            new Date(c.timestamp).toDateString() === new Date(ret.timestamp).toDateString()
+        ); 
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h2 className="text-lg font-bold text-brand-primary">Gestion des Retours (Aujourd'hui)</h2>
-                <div className="flex items-center gap-3">
-                    <div className="relative">
-                        <input 
-                            type="text" 
-                            placeholder="Filtrer par Tournée..."
-                            className="pl-8 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-secondary w-48"
-                            value={tourFilter}
-                            onChange={e => setTourFilter(e.target.value)}
-                        />
-                        <span className="absolute left-2.5 top-2.5 text-gray-400">🔍</span>
-                    </div>
-                    <button onClick={() => exportReportsToExcel(checkins)} className="px-4 py-2 bg-brand-secondary text-white rounded shadow hover:opacity-90 flex items-center gap-2">
-                        <Icons.Document className="w-5 h-5" /> Rapport Excel Complet
+            <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm">
+                <h2 className="text-xl font-bold text-gray-800">Gestion des Rapports</h2>
+                <div className="flex gap-4 items-center">
+                    <input 
+                        type="date" 
+                        value={filterDate} 
+                        onChange={e => setFilterDate(e.target.value)} 
+                        className="border p-2 rounded"
+                    />
+                    <button 
+                        onClick={() => exportReportsToExcel(checkins.filter(c => new Date(c.timestamp).toDateString() === new Date(filterDate).toDateString()))}
+                        className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 flex items-center gap-2"
+                    >
+                        <Icons.Document className="w-4 h-4" /> Export Rapport
                     </button>
                 </div>
             </div>
+
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50 text-gray-700">
                         <tr>
-                            <th className="px-4 py-3">Heure Départ</th>
                             <th className="px-4 py-3">Heure Retour</th>
                             <th className="px-4 py-3">Chauffeur</th>
                             <th className="px-4 py-3">Tournée</th>
                             <th className="px-4 py-3">Sous-traitant</th>
-                            <th className="px-4 py-3">État</th>
-                            <th className="px-4 py-3">Incidents</th>
-                            <th className="px-4 py-3">Actions</th>
+                            <th className="px-4 py-3">Statut Rapport</th>
+                            <th className="px-4 py-3 text-right">Action</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {returnCheckins.map(c => {
-                            const report = reports.find(r => r.checkinId === c.id);
-                            
-                            // Calculate Departure Time
-                            const departure = checkins
-                                .filter(d => 
-                                    d.driverId === c.driverId && 
-                                    d.type === 'Départ Chauffeur' && 
-                                    new Date(d.timestamp).toDateString() === new Date(c.timestamp).toDateString() &&
-                                    new Date(d.timestamp) < new Date(c.timestamp)
-                                )
-                                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+                    <tbody className="divide-y divide-gray-100">
+                        {filteredReturns.map(ret => {
+                            const report = reports.find(r => r.checkinId === ret.id);
+                            const dep = getDeparture(ret);
+                            const hasIncidents = report && (
+                                report.saturationLockers.length > 0 || 
+                                report.livraisonsManquantes.length > 0 || 
+                                report.pudosApmFermes.length > 0 || 
+                                (report.refus && report.refus.length > 0) ||
+                                (report.devoyes && (report.devoyes.sacs > 0 || report.devoyes.vracs > 0))
+                            );
 
-                            let incidentCount = 0;
-                            if (report) {
-                                incidentCount += report.saturationLockers.length;
-                                incidentCount += report.livraisonsManquantes.length;
-                                incidentCount += report.pudosApmFermes.length;
-                                incidentCount += (report.refus || []).length;
-                                if (report.devoyes && (report.devoyes.sacs > 0 || report.devoyes.vracs > 0)) incidentCount++;
-                            }
-                            
                             return (
-                                <tr key={c.id} className={`border-b hover:bg-gray-50 ${report?.requiresReview ? 'bg-purple-50' : ''}`}>
-                                    <td className="px-4 py-3 font-mono text-gray-600">
-                                        {departure ? new Date(departure.timestamp).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}) : '-'}
-                                    </td>
-                                    <td className="px-4 py-3">{new Date(c.timestamp).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}</td>
-                                    <td className="px-4 py-3 font-medium">
-                                        {c.driverName}
-                                        {c.driverReportedIssues && (
-                                            <span className="ml-2 text-brand-yellow" title="Incident signalé par le chauffeur">⚠️</span>
-                                        )}
-                                    </td>
-                                    <td className="px-4 py-3 font-mono text-gray-600">{c.tour}</td>
-                                    <td className="px-4 py-3 text-gray-500">{c.subcontractor}</td>
+                                <tr key={ret.id} className="hover:bg-gray-50">
+                                    <td className="px-4 py-3 font-mono">{new Date(ret.timestamp).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}</td>
+                                    <td className="px-4 py-3 font-medium">{ret.driverName}</td>
+                                    <td className="px-4 py-3">{ret.tour}</td>
+                                    <td className="px-4 py-3">{ret.subcontractor}</td>
                                     <td className="px-4 py-3">
-                                        <div className="flex gap-2">
-                                            <span className={`px-2 py-1 rounded text-xs font-bold ${report ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                                {report ? 'Rapporté' : 'En attente'}
-                                            </span>
-                                            {report?.requiresReview && (
-                                                <span className="px-2 py-1 rounded text-xs font-bold bg-purple-100 text-purple-800 flex items-center gap-1">
-                                                    <Icons.Flag className="w-3 h-3" />
-                                                    À Vérifier
+                                        {report ? (
+                                            <div className="flex flex-col gap-1">
+                                                <span className={`inline-flex w-fit px-2 py-1 rounded-full text-xs font-bold ${hasIncidents ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                                                    {hasIncidents ? 'Incidents' : 'RAS'}
                                                 </span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-4 py-3">
-                                        {report && incidentCount > 0 && (
-                                            <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-xs font-bold">{incidentCount} Incidents</span>
-                                        )}
-                                        {report && incidentCount === 0 && <span className="text-gray-400 text-xs">RAS</span>}
-                                        {!report && c.driverReportedIssues && (
-                                            <span className="text-brand-yellow font-bold text-xs">Signalement à traiter !</span>
+                                                {report.requiresReview && (
+                                                    <span className="inline-flex w-fit items-center gap-1 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded border border-purple-200">
+                                                        <Icons.Flag className="w-3 h-3" /> À vérifier
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-gray-400 italic">En attente</span>
                                         )}
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-3 text-right">
                                         <button 
-                                            onClick={() => handleOpen(c)}
-                                            className={`px-3 py-1 rounded text-xs font-medium ${report ? 'bg-gray-100 text-brand-primary border border-gray-300' : 'bg-brand-primary text-white'}`}
+                                            onClick={() => handleOpenReport(ret)}
+                                            className={`px-3 py-1 rounded text-xs font-bold transition ${report ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-brand-primary text-white hover:bg-brand-primary/90'}`}
                                         >
-                                            {report ? 'Modifier' : 'Créer Rapport'}
+                                            {report ? 'Éditer' : 'Créer'}
                                         </button>
                                     </td>
                                 </tr>
                             );
                         })}
-                        {returnCheckins.length === 0 && (
+                        {filteredReturns.length === 0 && (
                             <tr>
-                                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">Aucun retour scanné correspondant.</td>
+                                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">Aucun retour enregistré pour cette date.</td>
                             </tr>
                         )}
                     </tbody>
                 </table>
             </div>
+
             {selectedCheckin && (
                 <ReportModal 
-                    isOpen={isModalOpen} 
-                    onClose={() => setIsModalOpen(false)} 
+                    isOpen={modalOpen}
+                    onClose={() => setModalOpen(false)}
                     checkin={selectedCheckin}
                     existingReport={reports.find(r => r.checkinId === selectedCheckin.id)}
-                    onSave={handleSave}
-                    departureComment={
-                        checkins
-                        .filter(c => 
-                            c.driverId === selectedCheckin.driverId && 
-                            c.type === 'Départ Chauffeur' &&
-                            new Date(c.timestamp).toDateString() === new Date(selectedCheckin.timestamp).toDateString() &&
-                            new Date(c.timestamp) < new Date(selectedCheckin.timestamp)
-                        )
-                        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]?.departureComment
-                    }
+                    onSave={handleSaveReport}
+                    departureComment={getDeparture(selectedCheckin)?.departureComment}
                 />
             )}
         </div>
@@ -720,260 +691,402 @@ export const ReportsTab: React.FC = () => {
 
 // --- Tab C: Drivers ---
 
+interface DriverModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  driver?: Driver;
+  onSave: (d: Driver) => void;
+}
+
+const DriverModal: React.FC<DriverModalProps> = ({ isOpen, onClose, driver, onSave }) => {
+  if (!isOpen) return null;
+
+  const [formData, setFormData] = useState<Driver>(driver || {
+    id: '',
+    name: '',
+    subcontractor: '',
+    plate: '',
+    tour: '',
+    telephone: ''
+  });
+
+  const handleChange = (field: keyof Driver, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (formData.id && formData.name) {
+      onSave(formData);
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-md p-6">
+        <h3 className="text-xl font-bold mb-4">{driver ? 'Modifier Chauffeur' : 'Ajouter Chauffeur'}</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">ID / Matricule *</label>
+            <input 
+              required
+              className="mt-1 block w-full border rounded p-2"
+              value={formData.id}
+              onChange={e => handleChange('id', e.target.value)}
+              disabled={!!driver} // ID typically shouldn't change for existing records or it creates a new one
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Nom Complet *</label>
+            <input 
+              required
+              className="mt-1 block w-full border rounded p-2"
+              value={formData.name}
+              onChange={e => handleChange('name', e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+                <label className="block text-sm font-medium text-gray-700">Sous-traitant</label>
+                <input 
+                  className="mt-1 block w-full border rounded p-2"
+                  value={formData.subcontractor}
+                  onChange={e => handleChange('subcontractor', e.target.value)}
+                />
+             </div>
+             <div>
+                <label className="block text-sm font-medium text-gray-700">Tournée</label>
+                <input 
+                  className="mt-1 block w-full border rounded p-2"
+                  value={formData.tour}
+                  onChange={e => handleChange('tour', e.target.value)}
+                />
+             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+                <label className="block text-sm font-medium text-gray-700">Téléphone</label>
+                <input 
+                  className="mt-1 block w-full border rounded p-2"
+                  value={formData.telephone}
+                  onChange={e => handleChange('telephone', e.target.value)}
+                />
+             </div>
+             <div>
+                <label className="block text-sm font-medium text-gray-700">Plaque</label>
+                <input 
+                  className="mt-1 block w-full border rounded p-2"
+                  value={formData.plate}
+                  onChange={e => handleChange('plate', e.target.value)}
+                />
+             </div>
+          </div>
+          
+          <div className="flex justify-end gap-2 mt-6">
+             <button type="button" onClick={onClose} className="px-4 py-2 border rounded hover:bg-gray-50">Annuler</button>
+             <button type="submit" className="px-4 py-2 bg-brand-primary text-white rounded hover:bg-brand-primary/90">Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export const DriversTab: React.FC = () => {
-    const [drivers, setDrivers] = useState<Driver[]>(getDrivers());
-    const [isEditing, setIsEditing] = useState<string | null>(null);
-    const [editForm, setEditForm] = useState<Partial<Driver>>({});
-    const [fileError, setFileError] = useState('');
+  const [drivers, setDrivers] = useState<Driver[]>(getDrivers());
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<Driver | undefined>(undefined);
 
-    const handleStartEdit = (d: Driver) => {
-        setIsEditing(d.id);
-        setEditForm(d);
-    };
+  const filteredDrivers = drivers.filter(d => 
+    d.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    d.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    d.subcontractor.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-    const handleSave = () => {
-        if (editForm.id && editForm.name) {
-            saveDriver(editForm as Driver);
-            setDrivers(getDrivers());
-            setIsEditing(null);
-        }
-    };
+  const handleSave = (d: Driver) => {
+    saveDriver(d);
+    setDrivers(getDrivers());
+  };
 
-    const handleDelete = (id: string) => {
-        if (window.confirm('Supprimer ce chauffeur ?')) {
-            deleteDriver(id);
-            // Force state update by creating a new array reference from the fresh storage data
-            setDrivers([...getDrivers()]); 
-        }
-    };
+  const handleDelete = (id: string) => {
+    if(confirm('Supprimer ce chauffeur ?')) {
+      deleteDriver(id);
+      setDrivers(getDrivers());
+    }
+  };
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            try {
-                // Now using Excel parser
-                const newDrivers = await parseDriverExcel(file);
-                if (newDrivers.length > 0) {
-                    if (confirm(`Remplacer la base avec ${newDrivers.length} chauffeurs ?`)) {
-                        importDrivers(newDrivers);
-                        setDrivers(getDrivers());
-                        setFileError('');
-                    }
-                } else {
-                    setFileError('Aucun chauffeur valide trouvé dans le fichier Excel.');
-                }
-            } catch (err) {
-                setFileError('Erreur de lecture du fichier.');
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const newDrivers = await parseDriverExcel(e.target.files[0]);
+        if (newDrivers.length > 0) {
+            if(confirm(`Importer ${newDrivers.length} chauffeurs ? Cela remplacera la liste actuelle.`)) {
+                importDrivers(newDrivers);
+                setDrivers(getDrivers());
+                alert('Import réussi !');
             }
+        } else {
+            alert('Aucun chauffeur trouvé dans le fichier.');
         }
-    };
+      } catch (err) {
+        alert('Erreur lors de la lecture du fichier Excel.');
+        console.error(err);
+      }
+    }
+  };
 
-    const handleAddNew = () => {
-        const newId = Math.floor(Math.random() * 10000).toString();
-        const newDriver: Driver = { id: newId, name: '', subcontractor: '', plate: '', tour: '', telephone: '' };
-        handleStartEdit(newDriver);
-    };
+  return (
+    <div className="space-y-6">
+       <div className="flex justify-between items-center">
+          <div className="relative w-64">
+             <input 
+               placeholder="Rechercher (Nom, ID, Sous-traitant)..."
+               className="w-full pl-8 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-yellow focus:outline-none"
+               value={searchTerm}
+               onChange={e => setSearchTerm(e.target.value)}
+             />
+             <span className="absolute left-2.5 top-2.5 text-gray-400">🔍</span>
+          </div>
+          <div className="flex gap-2">
+            <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-medium text-sm flex items-center gap-2">
+               <Icons.Document className="w-4 h-4" /> Import Excel
+               <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleImport} />
+            </label>
+            <button 
+              onClick={() => { setEditingDriver(undefined); setIsModalOpen(true); }}
+              className="bg-brand-primary text-white px-4 py-2 rounded-lg hover:bg-brand-primary/90 font-medium text-sm flex items-center gap-2"
+            >
+              <Icons.Users className="w-4 h-4" /> Ajouter Chauffeur
+            </button>
+          </div>
+       </div>
 
-    return (
-        <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <h2 className="text-lg font-bold text-brand-primary">Base Chauffeurs</h2>
-                <div className="flex gap-2 items-center flex-wrap">
-                    <div className="relative overflow-hidden">
-                         <button className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm font-medium flex items-center gap-2">
-                             <Icons.Document className="w-4 h-4" />
-                             Importer Excel
-                         </button>
-                         <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
-                    </div>
-                    <button onClick={handleAddNew} className="bg-brand-primary text-white px-3 py-2 rounded text-sm font-medium">Ajouter Nouveau</button>
-                </div>
-            </div>
-            {fileError && <p className="text-red-500 text-sm">{fileError}</p>}
+       <div className="bg-white rounded-lg shadow overflow-hidden">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-gray-50 text-gray-700">
+               <tr>
+                 <th className="px-4 py-3">ID</th>
+                 <th className="px-4 py-3">Nom</th>
+                 <th className="px-4 py-3">Sous-traitant</th>
+                 <th className="px-4 py-3">Tournée</th>
+                 <th className="px-4 py-3">Téléphone</th>
+                 <th className="px-4 py-3 text-right">Actions</th>
+               </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+               {filteredDrivers.map(d => (
+                 <tr key={d.id} className="hover:bg-gray-50">
+                   <td className="px-4 py-3 font-mono font-medium">{d.id}</td>
+                   <td className="px-4 py-3 font-bold text-gray-800">{d.name}</td>
+                   <td className="px-4 py-3">{d.subcontractor}</td>
+                   <td className="px-4 py-3">{d.tour}</td>
+                   <td className="px-4 py-3 text-gray-500">{d.telephone}</td>
+                   <td className="px-4 py-3 text-right">
+                      <button 
+                        onClick={() => { setEditingDriver(d); setIsModalOpen(true); }}
+                        className="text-blue-600 hover:text-blue-800 mr-3"
+                      >
+                        <Icons.Pencil className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(d.id)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                         <Icons.Trash className="w-4 h-4" />
+                      </button>
+                   </td>
+                 </tr>
+               ))}
+               {filteredDrivers.length === 0 && (
+                 <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">Aucun chauffeur trouvé.</td>
+                 </tr>
+               )}
+            </tbody>
+          </table>
+       </div>
 
-            {/* Excel Instruction Box */}
-            <div className="bg-blue-50 text-blue-800 p-4 rounded-lg border border-blue-200 text-sm">
-                <p className="font-bold flex items-center gap-2 mb-2">
-                    <Icons.Info className="w-4 h-4" /> 
-                    Format Excel attendu (.xlsx) :
-                </p>
-                <ul className="list-disc list-inside space-y-1 ml-1 text-blue-700">
-                    <li>Colonnes requises (en-têtes) : <b>ID</b> (ou Identifiant), <b>Nom</b>, <b>Sous-traitant</b>, <b>Tournée</b>, <b>Plaque</b>, <b>Téléphone</b>.</li>
-                    <li>La première ligne du fichier doit contenir les titres de ces colonnes.</li>
-                </ul>
-            </div>
-            
-            <div className="bg-white rounded-lg shadow overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                     <thead className="bg-gray-50 text-gray-700">
-                        <tr>
-                            <th className="px-4 py-2">ID</th>
-                            <th className="px-4 py-2">Nom</th>
-                            <th className="px-4 py-2">Sous-traitant</th>
-                            <th className="px-4 py-2">Plaque</th>
-                            <th className="px-4 py-2">Tournée</th>
-                             <th className="px-4 py-2">Tel</th>
-                            <th className="px-4 py-2 w-24">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {isEditing && !drivers.find(d => d.id === isEditing) && (
-                             <tr className="bg-yellow-50">
-                                <td className="p-2"><input className="w-full border rounded p-1" placeholder="ID" value={editForm.id} onChange={e => setEditForm({...editForm, id: e.target.value})} /></td>
-                                <td className="p-2"><input className="w-full border rounded p-1" placeholder="Nom" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} /></td>
-                                <td className="p-2"><input className="w-full border rounded p-1" value={editForm.subcontractor} onChange={e => setEditForm({...editForm, subcontractor: e.target.value})} /></td>
-                                <td className="p-2"><input className="w-full border rounded p-1" value={editForm.plate} onChange={e => setEditForm({...editForm, plate: e.target.value})} /></td>
-                                <td className="p-2"><input className="w-full border rounded p-1" value={editForm.tour} onChange={e => setEditForm({...editForm, tour: e.target.value})} /></td>
-                                <td className="p-2"><input className="w-full border rounded p-1" value={editForm.telephone} onChange={e => setEditForm({...editForm, telephone: e.target.value})} /></td>
-                                <td className="p-2 flex gap-2">
-                                    <button onClick={handleSave} className="text-green-600 font-bold">V</button>
-                                    <button onClick={() => setIsEditing(null)} className="text-red-600 font-bold">X</button>
-                                </td>
-                            </tr>
-                        )}
-                        {drivers.map((d, index) => (
-                            <tr key={`${d.id}-${index}`} className="border-b hover:bg-gray-50">
-                                {isEditing === d.id ? (
-                                    <>
-                                        <td className="p-2 text-gray-500">{d.id}</td>
-                                        <td className="p-2"><input className="w-full border rounded p-1" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} /></td>
-                                        <td className="p-2"><input className="w-full border rounded p-1" value={editForm.subcontractor} onChange={e => setEditForm({...editForm, subcontractor: e.target.value})} /></td>
-                                        <td className="p-2"><input className="w-full border rounded p-1" value={editForm.plate} onChange={e => setEditForm({...editForm, plate: e.target.value})} /></td>
-                                        <td className="p-2"><input className="w-full border rounded p-1" value={editForm.tour} onChange={e => setEditForm({...editForm, tour: e.target.value})} /></td>
-                                        <td className="p-2"><input className="w-full border rounded p-1" value={editForm.telephone} onChange={e => setEditForm({...editForm, telephone: e.target.value})} /></td>
-                                        <td className="p-2 flex gap-2">
-                                            <button onClick={() => handleStartEdit(d)} className="text-brand-secondary hover:text-brand-primary"><Icons.Pencil className="w-4 h-4"/></button>
-                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(d.id); }} className="text-gray-400 hover:text-red-500 p-1"><Icons.Trash className="w-4 h-4"/></button>
-                                        </td>
-                                    </>
-                                ) : (
-                                    <>
-                                        <td className="px-4 py-2">{d.id}</td>
-                                        <td className="px-4 py-2 font-medium">{d.name}</td>
-                                        <td className="px-4 py-2">{d.subcontractor}</td>
-                                        <td className="px-4 py-2">{d.plate}</td>
-                                        <td className="px-4 py-2">{d.tour}</td>
-                                        <td className="px-4 py-2">{d.telephone}</td>
-                                        <td className="px-4 py-2 flex gap-2">
-                                            <button onClick={() => handleStartEdit(d)} className="text-brand-secondary hover:text-brand-primary"><Icons.Pencil className="w-4 h-4"/></button>
-                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(d.id); }} className="text-gray-400 hover:text-red-500 p-1"><Icons.Trash className="w-4 h-4"/></button>
-                                        </td>
-                                    </>
-                                )}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
+       <DriverModal 
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          driver={editingDriver}
+          onSave={handleSave}
+       />
+    </div>
+  );
 };
 
 // --- Tab D: Settings ---
 
 export const SettingsTab: React.FC = () => {
     const [settings, setSettings] = useState<NotificationSettings>(getNotificationSettings());
-    const [saved, setSaved] = useState(false);
+    const [permissionStatus, setPermissionStatus] = useState(Notification.permission);
 
-    const handleSave = () => {
-        saveNotificationSettings(settings);
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
+    useEffect(() => {
+        // Poll permission status occasionally in case it changes
+        const interval = setInterval(() => {
+            setPermissionStatus(Notification.permission);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const handleChange = (key: keyof NotificationSettings, value: any) => {
+        const newSettings = { ...settings, [key]: value };
+        setSettings(newSettings);
+        saveNotificationSettings(newSettings);
     };
 
-    const handleTestNotification = async () => {
-        const permission = await requestNotificationPermission();
-        if(permission) {
-            new Notification("Test Notification", { body: "Le système de notification fonctionne correctement.", icon: '/vite.svg' });
+    const handleRequestPermission = async () => {
+        const granted = await requestNotificationPermission();
+        if (granted) {
+            setPermissionStatus('granted');
+            alert("Permissions accordées !");
         } else {
-            alert("Permission refusée par le navigateur.");
+            setPermissionStatus(Notification.permission);
+            // Don't show generic alert here, rely on the UI update below for 'denied'
         }
     };
 
+    const handleTestNotification = () => {
+        sendLocalNotification("Test de Notification", "Ceci est un test pour vérifier que les alertes fonctionnent.");
+    };
+
     return (
-        <div className="space-y-8 max-w-3xl mx-auto">
-             <div className="flex justify-between items-center">
-                <h2 className="text-lg font-bold text-brand-primary">Configuration des Notifications</h2>
-                <button onClick={handleTestNotification} className="text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded text-gray-700">
-                    Tester une notification
-                </button>
-             </div>
+        <div className="max-w-2xl mx-auto space-y-8">
+            <div className="bg-white p-6 rounded-lg shadow border-t-4 border-gray-700">
+                <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                    <Icons.Settings className="w-6 h-6 text-gray-700" />
+                    Configuration des Alertes
+                </h2>
 
-             <div className="bg-white rounded-lg shadow p-6 space-y-8">
-                 
-                 {/* Master Switch */}
-                 <div className="flex items-center justify-between border-b pb-6">
-                     <div>
-                         <h3 className="font-bold text-gray-800 text-lg">Activer les Notifications</h3>
-                         <p className="text-sm text-gray-500">Active ou désactive globalement toutes les alertes du système.</p>
-                     </div>
-                     <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
-                            type="checkbox" 
-                            className="sr-only peer" 
-                            checked={settings.masterEnabled}
-                            onChange={e => setSettings({...settings, masterEnabled: e.target.checked})} 
-                        />
-                        <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-brand-secondary"></div>
-                     </label>
-                 </div>
-
-                 {/* Delay Settings */}
-                 <div className={`space-y-4 ${!settings.masterEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-                     <div className="flex items-center justify-between">
+                <div className="space-y-6">
+                    {/* Master Switch */}
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                         <div>
-                            <h3 className="font-bold text-gray-700">Alertes de Retard Chauffeur</h3>
-                            <p className="text-sm text-gray-500">Notifier quand un chauffeur dépasse un temps de tournée spécifique.</p>
+                            <h3 className="font-bold text-gray-700">Activer les Notifications</h3>
+                            <p className="text-sm text-gray-500">Active ou désactive todas les alertes du système.</p>
                         </div>
-                        <input 
-                            type="checkbox" 
-                            className="w-6 h-6 text-brand-secondary rounded accent-brand-secondary"
-                            checked={settings.enableDelayAlerts}
-                            onChange={e => setSettings({...settings, enableDelayAlerts: e.target.checked})}
-                        />
-                     </div>
-                     
-                     {settings.enableDelayAlerts && (
-                         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 ml-4">
-                             <label className="block text-sm font-bold text-gray-700 mb-2">Seuil de déclenchement (Heures)</label>
-                             <div className="flex items-center gap-3">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                className="sr-only peer"
+                                checked={settings.masterEnabled}
+                                onChange={e => handleChange('masterEnabled', e.target.checked)}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                        </label>
+                    </div>
+
+                    <hr />
+
+                    {/* Delay Alerts */}
+                    <div className={`space-y-4 ${!settings.masterEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                         <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="font-bold text-gray-700">Alertes de Retard</h3>
+                                <p className="text-sm text-gray-500">Notifier quand un chauffeur dépasse la durée maximale.</p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    className="sr-only peer"
+                                    checked={settings.enableDelayAlerts}
+                                    onChange={e => handleChange('enableDelayAlerts', e.target.checked)}
+                                />
+                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                         </div>
+
+                         {settings.enableDelayAlerts && (
+                             <div className="flex items-center gap-4 pl-4 border-l-2 border-blue-200">
+                                 <label className="text-sm font-medium text-gray-600">Seuil de retard (Heures) :</label>
                                  <input 
                                     type="number" 
-                                    min="1" max="24" 
-                                    className="border rounded p-2 w-24 text-center font-bold"
+                                    min="1" 
+                                    max="24"
+                                    className="border rounded p-2 w-20 text-center font-bold"
                                     value={settings.delayThresholdHours}
-                                    onChange={e => setSettings({...settings, delayThresholdHours: parseInt(e.target.value)})}
+                                    onChange={e => handleChange('delayThresholdHours', parseInt(e.target.value) || 12)}
                                  />
-                                 <span className="text-sm text-gray-600">heures de tournée avant alerte.</span>
                              </div>
-                         </div>
+                         )}
+                    </div>
+
+                    <hr />
+
+                    {/* Incident Alerts */}
+                    <div className={`flex items-center justify-between ${!settings.masterEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <div>
+                            <h3 className="font-bold text-gray-700">Alertes d'Incidents</h3>
+                            <p className="text-sm text-gray-500">Notifier immédiatement quand un chauffeur signale un problema au kiosque.</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                className="sr-only peer"
+                                checked={settings.enableIncidentAlerts}
+                                onChange={e => handleChange('enableIncidentAlerts', e.target.checked)}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            {/* Permission Status */}
+            <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="font-bold text-gray-800 mb-4">Statut Système</h3>
+                
+                {permissionStatus === 'denied' && (
+                    <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded">
+                        <div className="flex">
+                            <div className="flex-shrink-0">
+                                <Icons.Info className="h-5 w-5 text-red-500" />
+                            </div>
+                            <div className="ml-3">
+                                <h3 className="text-sm font-bold text-red-800">
+                                    Les notifications sont bloquées par votre navigateur.
+                                </h3>
+                                <div className="mt-2 text-sm text-red-700">
+                                    <p>Le bouton "Demander" ne fonctionnera pas car vous (ou le navigateur) avez refusé la permission précédemment.</p>
+                                    <p className="mt-2 font-bold">Pour corriger cela :</p>
+                                    <ol className="list-decimal list-inside ml-2 mt-1 space-y-1">
+                                        <li>Cliquez sur l'icône de <b>Cadenas 🔒</b> ou de paramètres dans la barre d'adresse (à gauche de l'URL).</li>
+                                        <li>Cherchez "Notifications".</li>
+                                        <li>Changez le statut de "Bloquer" à <b>"Autoriser" (Allow)</b>.</li>
+                                        <li>Actualisez la page.</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="flex items-center justify-between mb-4">
+                     <span className="text-gray-600">Permissions du Navigateur :</span>
+                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${permissionStatus === 'granted' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {permissionStatus === 'granted' ? 'Accordé' : permissionStatus === 'denied' ? 'Refusé' : 'Par défaut'}
+                     </span>
+                </div>
+                
+                <div className="flex gap-4">
+                     {permissionStatus !== 'granted' && permissionStatus !== 'denied' && (
+                        <button onClick={handleRequestPermission} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                            Demander Permissions
+                        </button>
                      )}
-                 </div>
-
-                 {/* Incident Settings */}
-                 <div className={`flex items-center justify-between border-t pt-6 ${!settings.masterEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-                     <div>
-                         <h3 className="font-bold text-gray-700">Alertes Incidents (Kiosque)</h3>
-                         <p className="text-sm text-gray-500">Recevoir une notification immédiate quand un chauffeur signale un problème au retour.</p>
-                     </div>
-                     <input 
-                        type="checkbox" 
-                        className="w-6 h-6 text-brand-secondary rounded accent-brand-secondary"
-                        checked={settings.enableIncidentAlerts}
-                        onChange={e => setSettings({...settings, enableIncidentAlerts: e.target.checked})}
-                     />
-                 </div>
-
-             </div>
-
-             <div className="flex justify-end">
-                 <button 
-                    onClick={handleSave} 
-                    className={`px-6 py-3 rounded-lg font-bold text-white shadow-lg transition-all ${saved ? 'bg-green-500' : 'bg-brand-primary hover:bg-brand-primary/90'}`}
-                 >
-                     {saved ? 'Sauvegardé !' : 'Enregistrer la Configuration'}
-                 </button>
-             </div>
+                     {permissionStatus === 'denied' && (
+                         <button disabled className="px-4 py-2 bg-gray-300 text-gray-500 rounded cursor-not-allowed text-sm">
+                            Permission Refusée
+                        </button>
+                     )}
+                     <button onClick={handleTestNotification} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 text-sm">
+                        Envoyer Test
+                     </button>
+                </div>
+            </div>
         </div>
     );
 };

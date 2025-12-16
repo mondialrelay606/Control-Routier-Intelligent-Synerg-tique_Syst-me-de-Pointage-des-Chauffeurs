@@ -200,6 +200,11 @@ export const clearOldData = (): void => {
     localStorage.setItem(KEYS.REPORTS, JSON.stringify(reports));
 };
 
+export const resetAllData = (): void => {
+    localStorage.clear();
+    initStorage();
+};
+
 // --- Reports Service ---
 
 export const getReports = (): ReturnReport[] => {
