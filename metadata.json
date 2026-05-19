@@ -1,5 +1,6 @@
 {
   "name": "Control Routier Intelligent & Synergétique_Système de Pointage des Chauffeurs",
   "description": "Application de gestion logistique pour le suivi des chauffeurs, les rapports d'incidents et les statistiques.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }
