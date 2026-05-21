@@ -1,7 +1,18 @@
 import * as XLSX from 'xlsx';
-import saveAs from 'file-saver';
 import { CheckinRecord, Driver, ReturnReport } from '../types';
 import { getDrivers, getReports } from '../services/dataService';
+
+// --- Native File Saving Helper (works perfectly offline and via file:// protocol) ---
+const saveFile = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 // --- Excel Import Helper ---
 export const parseDriverExcel = (file: File): Promise<Driver[]> => {
@@ -62,7 +73,7 @@ export const exportCheckinsToExcel = (checkins: CheckinRecord[], customFileName?
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   
   const fileName = customFileName || `Pointages_${new Date().toISOString().slice(0,10)}.xlsx`;
-  saveAs(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
+  saveFile(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
 };
 
 export const exportReportsToExcel = (checkins: CheckinRecord[], customFileName?: string) => {
@@ -388,5 +399,5 @@ export const exportReportsToExcel = (checkins: CheckinRecord[], customFileName?:
 
     const fileName = customFileName || `Rapport_CRIS_Complet_${new Date().toISOString().slice(0,10)}.xlsx`;
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    saveAs(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
+    saveFile(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
 };
